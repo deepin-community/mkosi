@@ -1,4 +1,18 @@
 #!/usr/bin/make -f
 
+#export DH_VERBOSE = 1
+
+include /usr/share/dpkg/pkg-info.mk
+
+export PYBUILD_NAME=mkosi
+
 %:
-	dh $@
+	dh $@ --buildsystem=pybuild --with bash-completion
+
+execute_before_dh_auto_build:
+ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
+	pandoc -t man -s -o $(CURDIR)/mkosi/resources/mkosi.1 $(CURDIR)/mkosi/resources/mkosi.md
+endif
+
+execute_after_dh_auto_build:
+	USER=nonexistent HOME=/ python3 -m mkosi completion bash > $(CURDIR)/debian/bash-completion

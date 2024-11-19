@@ -1,0 +1,2 @@
+# It is read by a mkosi command, so it is shipped with the package
+mkosi: package-contains-documentation-outside-usr-share-doc [usr/lib/python3/dist-packages/mkosi/resources/mkosi.md]

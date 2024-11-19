@@ -1,5 +1,307 @@
-template-repository (1.0-1) unstable; urgency=medium
+mkosi (24.3-1) unstable; urgency=medium
 
-  * Initial release
+  * New upstream version 24.3
+  * Set USER=nonexistent and HOME=/ in d/rules before generating bash
+    completion.
 
- -- Tsic404 <liuheng@deepin.org>  Sat, 28 Jan 2023 13:46:49 +0800
+ -- Luca Boccassi <bluca@debian.org>  Mon, 29 Jul 2024 21:05:45 +0100
+
+mkosi (24-1) unstable; urgency=medium
+
+  * New upstream version 24. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v24
+  * Generate bash completion with internal command
+  * Recommend distribution-gpg-keys
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 26 Jul 2024 17:22:28 +0100
+
+mkosi (23.1-1) unstable; urgency=medium
+
+  * New upstream version 23.1. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v23.1
+  * d/control: bump Standards-Version to 4.7.0, no changes
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 12 Jun 2024 11:09:57 +0100
+
+mkosi (22-1) unstable; urgency=medium
+
+  * New upstream version 22. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v22
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 14 Mar 2024 11:20:55 +0000
+
+mkosi (21-1) unstable; urgency=medium
+
+  * Add uidmap to Recommends, needed for non-root runs (Closes: #1065035)
+  * New upstream version 21. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v21
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 07 Mar 2024 09:48:47 +0000
+
+mkosi (20.2-1) unstable; urgency=medium
+
+  * New upstream version 20.2. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v20.1
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 22 Jan 2024 12:22:46 +0000
+
+mkosi (20.1-1) unstable; urgency=medium
+
+  * New upstream version 20.1. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v20.1
+    (Closes: #1060431)
+  * Add build dependency on fdisk for tests
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 12 Jan 2024 14:30:13 +0000
+
+mkosi (20-1) unstable; urgency=medium
+
+  * New upstream version 20. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v20
+  * Bump copyright year ranges in d/copyright
+  * Update short description (Closes: #1059221)
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 09 Jan 2024 15:13:08 +0000
+
+mkosi (19-1) unstable; urgency=medium
+
+  * New upstream version 19. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v19
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 15 Nov 2023 11:09:54 +0000
+
+mkosi (18-1) unstable; urgency=medium
+
+  * New upstream version 18. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v18
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 05 Oct 2023 15:58:44 +0100
+
+mkosi (17.1-1) unstable; urgency=medium
+
+  * New upstream version 17.1. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v17.1
+  * d/control: update package description. Debootstrap is no longer used,
+    and grub is supported
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 19 Sep 2023 13:31:29 +0100
+
+mkosi (17-1) unstable; urgency=medium
+
+  * New upstream version 17. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v17
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 19 Sep 2023 11:33:35 +0100
+
+mkosi (16-1) unstable; urgency=medium
+
+  * New upstream version 16. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v16
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 07 Sep 2023 18:58:27 +0100
+
+mkosi (15.1-1) unstable; urgency=medium
+
+  * New upstream version 15
+  * New upstream version 15.1
+    For a full list of changes, see:
+    https://github.com/systemd/mkosi/blob/main/NEWS.md
+  * Drop patches, merged in v15
+  * Switch from setuptools to pyproject
+  * Bump Standards-Version to 4.6.2, no changes
+  * Bump copyright year ranges in d/copyright
+  * Update dependencies for v15. Drop debootstrap, no longer needed. We
+    now need repart and nspawn from 254, bubblewrap and python3-pefile.
+    Also recommend other package managers and filesystems tools. Make all
+    filesystem tools and compression tools optional, as they are needed
+    only when building with that feature is configured.
+  * Update documentation packaging. Drop mkosi.md which is just a symlink,
+    and generate the manpage at build time and install it. Also support
+    !nodoc profile.
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 10 Aug 2023 13:09:55 +0100
+
+mkosi (14-2) unstable; urgency=medium
+
+  * Backport patch to fix unit tests run on non-amd64
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 30 Oct 2022 11:32:58 +0000
+
+mkosi (14-1) unstable; urgency=medium
+
+  * New upstream version 14
+  * Drop ppc64-el-enotty.patch, merged upstream
+  * gbp.conf: rename branch to debian/sid
+  * Backport patch to add more architecture mappings (Closes: #860637)
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 29 Oct 2022 14:56:17 +0100
+
+mkosi (13-2) unstable; urgency=medium
+
+  * Backport patch to fix test run on ppc64el
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 27 Jun 2022 13:50:48 +0100
+
+mkosi (13-1) unstable; urgency=medium
+
+  * Bump d/copyright year range
+  * New upstream version 13
+  * Drop 0001-Fix-bootstrapping-RPM-distro-on-Debian.patch, merged
+    upstream
+  * Bump Standards-Version to 4.6.1, no changes
+  * Fix FTBFS with new python3-argcomplete register-python-argcomplete3
+    was renamed to register-python-argcomplete
+  * Build-depend on pexpect for tests
+  * Drop X-Python3-Version, no longer required
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 22 Jun 2022 02:06:31 +0100
+
+mkosi (12-2) unstable; urgency=medium
+
+  * Generate and install bash completion script
+  * Backport patch to fix bootstrapping RPM distro. Required due to
+    Debian-specific RPM patch that changes the location of the rpmdb.
+    (Closes: #1008169)
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 04 Apr 2022 21:40:35 +0100
+
+mkosi (12-1) unstable; urgency=medium
+
+  * New upstream version 12
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 30 Nov 2021 10:39:50 +0000
+
+mkosi (11-1) unstable; urgency=medium
+
+  * New upstream version 11
+  * Recommend python3-cryptography, needed for signed verity images
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 24 Nov 2021 19:27:38 +0000
+
+mkosi (10-1) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Bump debhelper from old 11 to 13.
+  * Set upstream metadata fields: Bug-Database, Bug-Submit, Contact,
+    Repository, Repository-Browse.
+  * Update standards version to 4.5.1, no changes needed.
+
+  [ Luca Boccassi ]
+  * New upstream version 10
+  * Drop mkosi.md-convert-emdash-into-regular-dash.patch, man page renders
+    correctly and can be parsed by lexgrog
+  * Drop Fix-detect_distribution-on-ubuntu.patch, merged upstream
+  * Add myself to Uploaders
+  * Bump Standards-Version to 4.6.0, no changes
+  * Switch to dh-sequence-python3
+  * d/rules: switch to execute_after
+  * d/copyright: fix license to LGPL-2.1+ and list more contributors. List
+    the upstream and downstream maintainers explicitly. The license is
+    LGPL-2.1-or-later.
+  * Add python3-pytest dependency for unit tests
+  * Add autopkgtest, run unit tests
+  * Add Recommends on tools needed for new optional features
+  * Bump minimum Python version requirement to 3.7
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 06 Oct 2021 18:10:37 +0100
+
+mkosi (5-2) unstable; urgency=medium
+
+  * Team upload
+
+  [ Dan Streetman ]
+  * Fix detect distribution on ubuntu (LP: #1923145)
+
+ -- Michael Biebl <biebl@debian.org>  Fri, 09 Apr 2021 21:30:50 +0200
+
+mkosi (5-1) unstable; urgency=medium
+
+  * New upstream release
+  * Bump the minimum required version to python 3.6.
+    3.5 is no longer supported
+  * Ship the upstream manpage instead of using help2man
+  * Fix format error in generated manpage.
+    Man does not like emdash vs dash
+  * d/control spring cleaning.
+    1. Bump Standards-Version
+    2. Mark Rules-Requires-Root: no, as we don't need root.
+    3. Bump debhelper compat to 11
+
+ -- Felipe Sateler <fsateler@debian.org>  Sun, 07 Jul 2019 22:30:49 -0400
+
+mkosi (4-1) unstable; urgency=medium
+
+  [ Felipe Sateler ]
+  * Add explicit Depends on e2fsprogs.
+    Lets allow moving e2fsprogs out of the essential set. (Closes: #887213)
+  * Add recommends on debian and ubuntu keyrings to be able to build debian
+    and ubuntu images
+  * New upstream version 4
+
+  [ Michael Biebl ]
+  * Update Vcs-* to point to https://salsa.debian.org
+
+ -- Felipe Sateler <fsateler@debian.org>  Fri, 27 Apr 2018 18:40:33 -0300
+
+mkosi (3+17-1) unstable; urgency=medium
+
+  * New upstream git snapshot 3+17
+    - Sets default mirror to deb.debian.org
+    - Adds builddir cache
+  * Mark systemd-container 233 as the minimum required version
+
+ -- Felipe Sateler <fsateler@debian.org>  Sun, 27 Aug 2017 13:14:18 -0300
+
+mkosi (3-2) unstable; urgency=medium
+
+  * Add depends on new fdisk package.
+    It was split out of util-linux to make it non-essential
+    (Closes: #872108)
+
+ -- Felipe Sateler <fsateler@debian.org>  Mon, 14 Aug 2017 19:24:55 -0300
+
+mkosi (3-1) unstable; urgency=medium
+
+  * New usptream release
+    - Drop version-bumping patch, upstream fixed the versioning
+
+ -- Felipe Sateler <fsateler@debian.org>  Mon, 03 Jul 2017 11:37:59 -0400
+
+mkosi (2-1) unstable; urgency=medium
+
+  * New upstream release
+    - Bump version numbers to 2
+  * Python needs to be >= 3.5 now
+  * Bump standards version
+  * Generate manpage in auto_build step instead of build.
+    Debhelper was getting confused when running install, so don't override the
+    build targets
+
+ -- Felipe Sateler <fsateler@debian.org>  Thu, 22 Jun 2017 14:56:19 -0400
+
+mkosi (1-1) unstable; urgency=medium
+
+  * First upstream release
+
+ -- Felipe Sateler <fsateler@debian.org>  Sun, 06 Nov 2016 19:28:47 -0300
+
+mkosi (0~20161012-1) unstable; urgency=medium
+
+  * New upstream git snapshot
+  * Also hook up debian/mkosi.1 for build-indep builds (Closes: #840425)
+
+ -- Felipe Sateler <fsateler@debian.org>  Wed, 19 Oct 2016 12:27:32 -0300
+
+mkosi (0~20161004-1) unstable; urgency=medium
+
+  * New upstream git snapshot
+  * Create manpage via help2man
+
+ -- Felipe Sateler <fsateler@debian.org>  Wed, 05 Oct 2016 20:50:54 -0300
+
+mkosi (0~20160922-1) unstable; urgency=medium
+
+  * Initial release (Closes: #833804)
+     - No upstream release yet, so git commit 893397862b2
+
+ -- Felipe Sateler <fsateler@debian.org>  Sun, 25 Sep 2016 12:56:26 -0300
