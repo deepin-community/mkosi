@@ -29,7 +29,7 @@ when running mkosi scripts by using the `BuildSources=` setting. For
 example, in `mkosi.local.conf`, we could have the following settings:
 
 ```conf
-[Content]
+[Build]
 BuildSources=../mkosi:mkosi
              ../fedora/mkosi:mkosi/rpm
 BuildSourcesEphemeral=yes
@@ -71,7 +71,7 @@ mkosi-chroot \
     --query \
     --buildrequires \
     --define "_topdir /var/tmp" \
-    --define "_sourcedir rpm" \
+    --define "_sourcedir $PWD/mkosi/rpm" \
     rpm/mkosi.spec |
         sort --unique |
         tee /tmp/buildrequires |
@@ -81,9 +81,10 @@ until mkosi-chroot \
     env --chdir=mkosi \
     rpmbuild \
     -bd \
+    --noprep \
     --build-in-place \
     --define "_topdir /var/tmp" \
-    --define "_sourcedir rpm" \
+    --define "_sourcedir $PWD/mkosi/rpm" \
     --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
     rpm/mkosi.spec
 do
@@ -154,10 +155,11 @@ set -e
 env --chdir=mkosi \
     rpmbuild \
     -bb \
+    --noprep \
     --build-in-place \
     $([ "$WITH_TESTS" = "0" ] && echo --nocheck) \
     --define "_topdir /var/tmp" \
-    --define "_sourcedir rpm" \
+    --define "_sourcedir $PWD/mkosi/rpm" \
     --define "_rpmdir $OUTPUTDIR" \
     ${BUILDDIR:+--define} \
     ${BUILDDIR:+"_vpath_builddir $BUILDDIR"} \

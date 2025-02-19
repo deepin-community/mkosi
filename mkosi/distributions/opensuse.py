@@ -7,16 +7,16 @@ from xml.etree import ElementTree
 
 from mkosi.config import Architecture, Config
 from mkosi.context import Context
+from mkosi.curl import curl
 from mkosi.distributions import DistributionInstaller, PackageType, join_mirror
 from mkosi.installer import PackageManager
 from mkosi.installer.dnf import Dnf
 from mkosi.installer.rpm import RpmRepository, find_rpm_gpgkey, setup_rpm
 from mkosi.installer.zypper import Zypper
 from mkosi.log import die
-from mkosi.mounts import finalize_crypto_mounts
+from mkosi.mounts import finalize_certificate_mounts
 from mkosi.run import run
-from mkosi.sandbox import Mount
-from mkosi.util import listify, sort_packages
+from mkosi.util import sort_packages
 
 
 class Installer(DistributionInstaller):
@@ -49,13 +49,13 @@ class Installer(DistributionInstaller):
 
     @classmethod
     def setup(cls, context: Context) -> None:
+        setup_rpm(context, dbbackend="ndb")
+
         zypper = context.config.find_binary("zypper")
         if zypper:
-            Zypper.setup(context, cls.repositories(context))
+            Zypper.setup(context, list(cls.repositories(context)))
         else:
-            Dnf.setup(context, cls.repositories(context))
-
-        setup_rpm(context)
+            Dnf.setup(context, list(cls.repositories(context)))
 
     @classmethod
     def install(cls, context: Context) -> None:
@@ -72,7 +72,8 @@ class Installer(DistributionInstaller):
                     "--recommends" if context.config.with_recommends else "--no-recommends",
                     *sort_packages(packages),
                 ],
-                apivfs=apivfs)
+                apivfs=apivfs,
+            )  # fmt: skip
         else:
             Dnf.invoke(context, "install", sort_packages(packages), apivfs=apivfs)
 
@@ -84,7 +85,6 @@ class Installer(DistributionInstaller):
             Dnf.invoke(context, "remove", packages, apivfs=True)
 
     @classmethod
-    @listify
     def repositories(cls, context: Context) -> Iterable[RpmRepository]:
         if context.config.local_mirror:
             yield RpmRepository(id="local-mirror", url=f"baseurl={context.config.local_mirror}", gpgurls=())
@@ -94,10 +94,33 @@ class Installer(DistributionInstaller):
         mirror = context.config.mirror or "https://download.opensuse.org"
 
         if context.config.release == "tumbleweed" or context.config.release.isdigit():
-            gpgurls = (
-                *([p] if (p := find_rpm_gpgkey(context, key="RPM-GPG-KEY-openSUSE-Tumbleweed")) else []),
-                *([p] if (p := find_rpm_gpgkey(context, key="RPM-GPG-KEY-openSUSE")) else []),
+            gpgkeys = tuple(
+                p
+                for key in ("RPM-GPG-KEY-openSUSE-Tumbleweed", "RPM-GPG-KEY-openSUSE")
+                if (p := find_rpm_gpgkey(context, key, required=False))
             )
+
+            if not gpgkeys and not context.config.repository_key_fetch:
+                die(
+                    "openSUSE GPG keys not found in /usr/share/distribution-gpg-keys",
+                    hint="Make sure the distribution-gpg-keys package is installed",
+                )
+
+            if zypper and gpgkeys:
+                run(
+                    [
+                        "rpm",
+                        "--root=/buildroot",
+                        "--import",
+                        *(key.removeprefix("file://") for key in gpgkeys),
+                    ],
+                    sandbox=context.sandbox(
+                        options=[
+                            "--bind", context.root, "/buildroot",
+                            *finalize_certificate_mounts(context.config),
+                        ],
+                    ),
+                )  # fmt: skip
 
             if context.config.release == "tumbleweed":
                 if context.config.architecture == Architecture.x86_64:
@@ -115,7 +138,7 @@ class Installer(DistributionInstaller):
                 yield RpmRepository(
                     id=repo,
                     url=f"baseurl={url}",
-                    gpgurls=gpgurls or (fetch_gpgurls(context, url) if not zypper else ()),
+                    gpgurls=gpgkeys or (fetch_gpgurls(context, url) if not zypper else ()),
                     enabled=repo == "oss",
                 )
 
@@ -125,7 +148,7 @@ class Installer(DistributionInstaller):
                         yield RpmRepository(
                             id=f"{repo}-{d}",
                             url=f"baseurl={url}",
-                            gpgurls=gpgurls or (fetch_gpgurls(context, url) if not zypper else ()),
+                            gpgurls=gpgkeys or (fetch_gpgurls(context, url) if not zypper else ()),
                             enabled=False,
                         )
 
@@ -134,23 +157,26 @@ class Installer(DistributionInstaller):
                 yield RpmRepository(
                     id="oss-update",
                     url=f"baseurl={url}",
-                    gpgurls=gpgurls or (fetch_gpgurls(context, url) if not zypper else ()),
+                    gpgurls=gpgkeys or (fetch_gpgurls(context, url) if not zypper else ()),
                 )
 
                 url = join_mirror(mirror, f"{subdir}/update/tumbleweed-non-oss")
                 yield RpmRepository(
                     id="non-oss-update",
                     url=f"baseurl={url}",
-                    gpgurls=gpgurls or (fetch_gpgurls(context, url) if not zypper else ()),
+                    gpgurls=gpgkeys or (fetch_gpgurls(context, url) if not zypper else ()),
                     enabled=False,
                 )
         else:
             if (
-                context.config.release in ("current", "stable", "leap") and
-                context.config.architecture != Architecture.x86_64
+                context.config.release in ("current", "stable", "leap")
+                and context.config.architecture != Architecture.x86_64
             ):
-                die(f"{cls.pretty_name()} only supports current and stable releases for the x86-64 architecture",
-                    hint="Specify either tumbleweed or a specific leap release such as 15.6")
+                die(
+                    f"{cls.pretty_name()} only supports current and stable releases "
+                    "for the x86-64 architecture",
+                    hint="Specify either tumbleweed or a specific leap release such as 15.6",
+                )
 
             if context.config.release in ("current", "stable", "leap"):
                 release = "openSUSE-current"
@@ -209,12 +235,12 @@ class Installer(DistributionInstaller):
     @classmethod
     def architecture(cls, arch: Architecture) -> str:
         a = {
-            Architecture.x86_64 : "x86_64",
-            Architecture.arm64  : "aarch64",
-        }.get(arch)
+            Architecture.x86_64: "x86_64",
+            Architecture.arm64:  "aarch64",
+        }.get(arch)  # fmt: skip
 
         if not a:
-            die(f"Architecture {a} is not supported by OpenSUSE")
+            die(f"Architecture {a} is not supported by openSUSE")
 
         return a
 
@@ -223,27 +249,7 @@ def fetch_gpgurls(context: Context, repourl: str) -> tuple[str, ...]:
     gpgurls = [f"{repourl}/repodata/repomd.xml.key"]
 
     with tempfile.TemporaryDirectory() as d:
-        run(
-            [
-                "curl",
-                "--location",
-                "--output-dir", d,
-                "--remote-name",
-                "--no-progress-meter",
-                "--fail",
-                *(["--proxy", context.config.proxy_url] if context.config.proxy_url else []),
-                *(["--noproxy", ",".join(context.config.proxy_exclude)] if context.config.proxy_exclude else []),
-                *(["--proxy-capath", "/proxy.cacert"] if context.config.proxy_peer_certificate else []),
-                *(["--proxy-cert", "/proxy.clientcert"] if context.config.proxy_client_certificate else []),
-                *(["--proxy-key", "/proxy.clientkey"] if context.config.proxy_client_key else []),
-                f"{repourl}/repodata/repomd.xml",
-            ],
-            sandbox=context.sandbox(
-                binary="curl",
-                network=True,
-                mounts=[Mount(d, d), *finalize_crypto_mounts(context.config)],
-            ),
-        )
+        curl(context.config, f"{repourl}/repodata/repomd.xml", Path(d))
         xml = (Path(d) / "repomd.xml").read_text()
 
     root = ElementTree.fromstring(xml)

@@ -6,10 +6,9 @@ from pathlib import Path
 from typing import Optional
 
 from mkosi.log import log_step
-from mkosi.run import run
-from mkosi.sandbox import Mount, SandboxProtocol, finalize_passwd_mounts, nosandbox
-from mkosi.types import PathString
-from mkosi.util import chdir, umask
+from mkosi.run import SandboxProtocol, finalize_passwd_symlinks, nosandbox, run, workdir
+from mkosi.sandbox import umask
+from mkosi.util import PathString, chdir
 
 
 def tar_exclude_apivfs_tmp() -> list[str]:
@@ -20,7 +19,7 @@ def tar_exclude_apivfs_tmp() -> list[str]:
         "--exclude", "./tmp/*",
         "--exclude", "./run/*",
         "--exclude", "./var/tmp/*",
-    ]
+    ]  # fmt: skip
 
 
 def make_tar(src: Path, dst: Path, *, sandbox: SandboxProtocol = nosandbox) -> None:
@@ -32,7 +31,7 @@ def make_tar(src: Path, dst: Path, *, sandbox: SandboxProtocol = nosandbox) -> N
                 "tar",
                 "--create",
                 "--file", "-",
-                "--directory", src,
+                "--directory", workdir(src, sandbox),
                 "--acls",
                 "--selinux",
                 # --xattrs implies --format=pax
@@ -42,13 +41,20 @@ def make_tar(src: Path, dst: Path, *, sandbox: SandboxProtocol = nosandbox) -> N
                 "--pax-option=delete=atime,delete=ctime,delete=mtime",
                 "--sparse",
                 "--force-local",
+                *(["--owner=root:0"] if os.getuid() != 0 else []),
+                *(["--group=root:0"] if os.getuid() != 0 else []),
                 *tar_exclude_apivfs_tmp(),
                 ".",
             ],
             stdout=f,
             # Make sure tar uses user/group information from the root directory instead of the host.
-            sandbox=sandbox(binary="tar", mounts=[Mount(src, src, ro=True), *finalize_passwd_mounts(src)]),
-        )
+            sandbox=sandbox(
+                options=[
+                    "--ro-bind", src, workdir(src, sandbox),
+                    *finalize_passwd_symlinks(workdir(src, sandbox)),
+                ],
+            ),
+        )  # fmt: skip
 
 
 def can_extract_tar(src: Path) -> bool:
@@ -60,6 +66,7 @@ def extract_tar(
     dst: Path,
     *,
     log: bool = True,
+    dirs: Sequence[PathString] = (),
     options: Sequence[PathString] = (),
     sandbox: SandboxProtocol = nosandbox,
 ) -> None:
@@ -73,12 +80,12 @@ def extract_tar(
         [
             "tar",
             "--extract",
-            "--file", src,
-            "--directory", dst,
+            "--file", workdir(src, sandbox),
+            "--directory", workdir(dst, sandbox),
             "--keep-directory-symlink",
             "--no-overwrite-dir",
             "--same-permissions",
-            "--same-owner" if (dst / "etc/passwd").exists() else "--numeric-owner",
+            "--same-owner" if (dst / "etc/passwd").exists() and os.getuid() == 0 else "--numeric-owner",
             "--same-order",
             "--acls",
             "--selinux",
@@ -86,13 +93,17 @@ def extract_tar(
             "--force-local",
             *tar_exclude_apivfs_tmp(),
             *options,
+            *dirs,
         ],
         sandbox=sandbox(
-            binary="tar",
             # Make sure tar uses user/group information from the root directory instead of the host.
-            mounts=[Mount(src, src, ro=True), Mount(dst, dst), *finalize_passwd_mounts(dst)]
+            options=[
+                "--ro-bind", src, workdir(src, sandbox),
+                "--bind", dst, workdir(dst, sandbox),
+                *finalize_passwd_symlinks(workdir(dst, sandbox)),
+            ],
         ),
-    )
+    )  # fmt: skip
 
 
 def make_cpio(
@@ -116,12 +127,19 @@ def make_cpio(
                 "cpio",
                 "--create",
                 "--reproducible",
+                "--renumber-inodes",
                 "--null",
                 "--format=newc",
                 "--quiet",
-                "--directory", src,
+                "--directory", workdir(src, sandbox),
+                *(["--owner=0:0"] if os.getuid() != 0 else []),
             ],
             input="\0".join(os.fspath(f) for f in files),
             stdout=f,
-            sandbox=sandbox(binary="cpio", mounts=[Mount(src, src, ro=True), *finalize_passwd_mounts(src)]),
-        )
+            sandbox=sandbox(
+                options=[
+                    "--ro-bind", src, workdir(src, sandbox),
+                    *finalize_passwd_symlinks(workdir(src, sandbox))
+                ],
+            ),
+        )  # fmt: skip

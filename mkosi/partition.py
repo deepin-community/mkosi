@@ -3,11 +3,10 @@ import json
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Final, Optional
 
 from mkosi.log import die
-from mkosi.run import run
-from mkosi.sandbox import Mount, SandboxProtocol, nosandbox
+from mkosi.run import SandboxProtocol, nosandbox, run, workdir
 
 
 @dataclasses.dataclass(frozen=True)
@@ -24,27 +23,31 @@ class Partition:
             type=dict["type"],
             uuid=dict["uuid"],
             partno=int(partno) if (partno := dict.get("partno")) else None,
-            split_path=Path(p) if ((p := dict.get("split_path")) and p != "-") else None,
+            # We have to translate the sandbox path to the path on the host by removing the /work prefix.
+            split_path=(
+                Path(p.removeprefix("/work")) if ((p := dict.get("split_path")) and p != "-") else None
+            ),
             roothash=dict.get("roothash"),
         )
 
-    GRUB_BOOT_PARTITION_UUID = "21686148-6449-6e6f-744e-656564454649"
+    GRUB_BOOT_PARTITION_UUID: Final[str] = "21686148-6449-6e6f-744e-656564454649"
 
 
 def find_partitions(image: Path, *, sandbox: SandboxProtocol = nosandbox) -> list[Partition]:
     output = json.loads(
         run(
-            ["systemd-repart", "--json=short", image],
+            ["systemd-repart", "--json=short", workdir(image, sandbox)],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            sandbox=sandbox(binary="systemd-repart", mounts=[Mount(image, image, ro=True)]),
+            sandbox=sandbox(options=["--ro-bind", image, workdir(image, sandbox)]),
         ).stdout
     )
     return [Partition.from_dict(d) for d in output]
 
 
 def finalize_roothash(partitions: Sequence[Partition]) -> Optional[str]:
-    roothash = usrhash = None
+    roothash: Optional[str] = None
+    usrhash: Optional[str] = None
 
     for p in partitions:
         if (h := p.roothash) is None:

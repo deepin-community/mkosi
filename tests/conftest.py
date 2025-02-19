@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+import mkosi.resources
 from mkosi.config import parse_config
 from mkosi.distributions import Distribution, detect_distribution
+from mkosi.log import log_setup
+from mkosi.util import resource_path
 
 from . import ImageConfig, ci_group
 
@@ -27,19 +31,6 @@ def pytest_addoption(parser: Any) -> None:
         help="Run the integration tests for the given release.",
     )
     parser.addoption(
-        "-T",
-        "--tools-tree-distribution",
-        metavar="DISTRIBUTION",
-        help="Use the given tools tree distribution to build the integration test images",
-        type=Distribution,
-        choices=[Distribution(d) for d in Distribution.values()],
-    )
-    parser.addoption(
-        "--tools-tree-release",
-        metavar="RELEASE",
-        help="Use the given tools tree release instead of the default one",
-    )
-    parser.addoption(
         "--debug-shell",
         help="Pass --debug-shell when running mkosi",
         action="store_true",
@@ -49,13 +40,17 @@ def pytest_addoption(parser: Any) -> None:
 @pytest.fixture(scope="session")
 def config(request: Any) -> ImageConfig:
     distribution = cast(Distribution, request.config.getoption("--distribution"))
-    release = cast(str, request.config.getoption("--release") or parse_config(["-d", str(distribution)])[1][0].release)
+    with resource_path(mkosi.resources) as resources:
+        release = cast(
+            str,
+            request.config.getoption("--release")
+            or parse_config(["-d", str(distribution)], resources=resources)[1][0].release,
+        )
     return ImageConfig(
         distribution=distribution,
         release=release,
-        tools_tree_distribution=cast(Distribution, request.config.getoption("--tools-tree-distribution")),
-        tools_tree_release=request.config.getoption("--tools-tree-release"),
         debug_shell=request.config.getoption("--debug-shell"),
+        tools=p if (p := Path("mkosi.tools")).exists() else None,
     )
 
 
@@ -63,3 +58,8 @@ def config(request: Any) -> ImageConfig:
 def ci_sections(request: Any) -> Iterator[None]:
     with ci_group(request.node.name):
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def logging() -> None:
+    log_setup()

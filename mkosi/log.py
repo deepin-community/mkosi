@@ -8,23 +8,16 @@ import sys
 from collections.abc import Iterator
 from typing import Any, NoReturn, Optional
 
+from mkosi.sandbox import Style
+
 # This global should be initialized after parsing arguments
 ARG_DEBUG = contextvars.ContextVar("debug", default=False)
 ARG_DEBUG_SHELL = contextvars.ContextVar("debug-shell", default=False)
+ARG_DEBUG_SANDBOX = contextvars.ContextVar("debug-sandbox", default=False)
 LEVEL = 0
 
 
-class Style:
-    bold = "\033[0;1;39m" if sys.stderr.isatty() else ""
-    gray = "\033[0;38;5;245m" if sys.stderr.isatty() else ""
-    red = "\033[31;1m" if sys.stderr.isatty() else ""
-    yellow = "\033[33;1m" if sys.stderr.isatty() else ""
-    reset = "\033[0m" if sys.stderr.isatty() else ""
-
-
-def die(message: str,
-        *,
-        hint: Optional[str] = None) -> NoReturn:
+def die(message: str, *, hint: Optional[str] = None) -> NoReturn:
     logging.error(f"{message}")
     if hint:
         logging.info(f"({hint})")
@@ -76,7 +69,7 @@ class Formatter(logging.Formatter):
             logging.WARNING:  logging.Formatter(f"‣ {Style.yellow}{fmt}{Style.reset}"),
             logging.ERROR:    logging.Formatter(f"‣ {Style.red}{fmt}{Style.reset}"),
             logging.CRITICAL: logging.Formatter(f"‣ {Style.red}{Style.bold}{fmt}{Style.reset}"),
-        }
+        }  # fmt: skip
 
         super().__init__(fmt, *args, **kwargs)
 
@@ -84,9 +77,11 @@ class Formatter(logging.Formatter):
         return self.formatters[record.levelno].format(record)
 
 
-def log_setup() -> None:
+def log_setup(default_log_level: str = "info") -> None:
     handler = logging.StreamHandler(stream=sys.stderr)
     handler.setFormatter(Formatter())
 
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.getLevelName(os.getenv("SYSTEMD_LOG_LEVEL", "info").upper()))
+    logging.getLogger().setLevel(
+        logging.getLevelName(os.getenv("SYSTEMD_LOG_LEVEL", default_log_level).upper())
+    )

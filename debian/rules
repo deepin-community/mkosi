@@ -11,8 +11,10 @@ export PYBUILD_NAME=mkosi
 
 execute_before_dh_auto_build:
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
-	pandoc -t man -s -o $(CURDIR)/mkosi/resources/mkosi.1 $(CURDIR)/mkosi/resources/mkosi.md
+	$(CURDIR)/tools/make-man-page.sh
 endif
 
 execute_after_dh_auto_build:
 	USER=nonexistent HOME=/ python3 -m mkosi completion bash > $(CURDIR)/debian/bash-completion
+	USER=nonexistent HOME=/ python3 -m mkosi completion fish > $(CURDIR)/debian/mkosi.fish
+	USER=nonexistent HOME=/ python3 -m mkosi completion zsh > $(CURDIR)/debian/_mkosi

@@ -11,25 +11,33 @@ import pytest
 from mkosi.config import (
     Architecture,
     Args,
+    ArtifactOutput,
     BiosBootloader,
     Bootloader,
+    BuildSourcesEphemeral,
     Cacheonly,
+    CertificateSource,
+    CertificateSourceType,
     Compression,
     Config,
     ConfigFeature,
     ConfigTree,
+    ConsoleMode,
     DocFormat,
+    Drive,
+    Firmware,
+    Incremental,
     KeySource,
+    KeySourceType,
     ManifestFormat,
     Network,
     OutputFormat,
-    QemuDrive,
-    QemuFirmware,
-    QemuVsockCID,
     SecureBootSignTool,
     ShimBootloader,
+    UKIProfile,
     Verb,
     Vmm,
+    VsockCID,
 )
 from mkosi.distributions import Distribution
 from mkosi.versioncomp import GenericVersion
@@ -46,34 +54,38 @@ def test_args(path: Optional[Path]) -> None:
                 "bar"
             ],
             "Debug": false,
+            "DebugSandbox": false,
             "DebugShell": false,
             "DebugWorkspace": false,
-            "Directory": {f'"{os.fspath(path)}"' if path is not None else 'null'},
+            "Directory": {f'"{os.fspath(path)}"' if path is not None else "null"},
             "DocFormat": "auto",
             "Force": 9001,
             "GenkeyCommonName": "test",
             "GenkeyValidDays": "100",
             "Json": false,
             "Pager": true,
-            "Verb": "build"
+            "Verb": "build",
+            "WipeBuildDir": true
         }}
         """
     )
 
     args = Args(
-        auto_bump = False,
-        cmdline = ["foo", "bar"],
-        debug = False,
-        debug_shell = False,
-        debug_workspace = False,
-        directory = Path(path) if path is not None else None,
-        doc_format = DocFormat.auto,
-        force = 9001,
-        genkey_common_name = "test",
-        genkey_valid_days = "100",
-        json = False,
-        pager = True,
-        verb = Verb.build,
+        auto_bump=False,
+        cmdline=["foo", "bar"],
+        debug=False,
+        debug_sandbox=False,
+        debug_shell=False,
+        debug_workspace=False,
+        directory=Path(path) if path is not None else None,
+        doc_format=DocFormat.auto,
+        force=9001,
+        genkey_common_name="test",
+        genkey_valid_days="100",
+        json=False,
+        pager=True,
+        verb=Verb.build,
+        wipe_build_dir=True,
     )
 
     assert args.to_json(indent=4, sort_keys=True) == dump.rstrip()
@@ -84,7 +96,6 @@ def test_config() -> None:
     dump = textwrap.dedent(
         """\
         {
-            "Acl": true,
             "Architecture": "ia64",
             "Autologin": false,
             "BaseTrees": [
@@ -107,7 +118,9 @@ def test_config() -> None:
                     "Target": "/frob"
                 }
             ],
-            "BuildSourcesEphemeral": true,
+            "BuildSourcesEphemeral": "yes",
+            "CDROM": false,
+            "CPUs": 2,
             "CacheDirectory": "/is/this/the/cachedir",
             "CacheOnly": "always",
             "Checksum": false,
@@ -120,13 +133,31 @@ def test_config() -> None:
             "ConfigureScripts": [
                 "/configure"
             ],
+            "Console": "gui",
             "Credentials": {
                 "credkey": "credval"
             },
             "Dependencies": [
                 "dep1"
             ],
+            "Devicetree": "freescale/imx8mm-verdin-nonwifi-dev.dtb",
             "Distribution": "fedora",
+            "Drives": [
+                {
+                    "Directory": "/foo/bar",
+                    "FileId": "red",
+                    "Id": "abc",
+                    "Options": "abc,qed",
+                    "Size": 200
+                },
+                {
+                    "Directory": null,
+                    "FileId": "wcd",
+                    "Id": "abc",
+                    "Options": "",
+                    "Size": 200
+                }
+            ],
             "Environment": {
                 "BAR": "BAR",
                 "Qux": "Qux",
@@ -136,18 +167,18 @@ def test_config() -> None:
             "Ephemeral": true,
             "ExtraSearchPaths": [],
             "ExtraTrees": [],
+            "Files": [],
             "FinalizeScripts": [],
+            "Firmware": "linux",
+            "FirmwareVariables": "/foo/bar",
             "Format": "uki",
             "ForwardJournal": "/mkosi.journal",
+            "History": true,
             "Hostname": null,
             "Image": "default",
             "ImageId": "myimage",
             "ImageVersion": "5",
-            "Include": [],
-            "Incremental": false,
-            "InitrdInclude": [
-                "/foo/bar"
-            ],
+            "Incremental": "no",
             "InitrdPackages": [
                 "clevis"
             ],
@@ -158,6 +189,7 @@ def test_config() -> None:
                 "/efi/initrd1",
                 "/efi/initrd2"
             ],
+            "KVM": "auto",
             "KernelCommandLine": [],
             "KernelCommandLineExtra": [
                 "look",
@@ -181,10 +213,12 @@ def test_config() -> None:
             "KernelModulesInitrdIncludeHost": true,
             "Key": null,
             "Keymap": "wow, so much keymap",
+            "Linux": null,
             "LocalMirror": null,
             "Locale": "en_C.UTF-8",
             "LocaleMessages": "",
             "Machine": "machine",
+            "MachineId": "b58253b0-cc92-4a34-8782-bcd99b20d07f",
             "MakeInitrd": false,
             "ManifestFormat": [
                 "json",
@@ -194,17 +228,13 @@ def test_config() -> None:
             "MinimumVersion": "123",
             "Mirror": null,
             "NSpawnSettings": null,
+            "OpenPGPTool": "gpg",
             "Output": "outfile",
             "OutputDirectory": "/your/output/here",
+            "OutputMode": 83,
             "Overlay": true,
             "PackageCacheDirectory": "/a/b/c",
             "PackageDirectories": [],
-            "PackageManagerTrees": [
-                {
-                    "Source": "/foo/bar",
-                    "Target": null
-                }
-            ],
             "Packages": [],
             "PassEnvironment": [
                 "abc"
@@ -219,7 +249,9 @@ def test_config() -> None:
             "PrepareScripts": [
                 "/run/foo"
             ],
-            "Profile": "profile",
+            "Profiles": [
+                "profile"
+            ],
             "ProxyClientCertificate": "/my/client/cert",
             "ProxyClientKey": "/my/client/key",
             "ProxyExclude": [
@@ -228,34 +260,10 @@ def test_config() -> None:
             "ProxyPeerCertificate": "/my/peer/cert",
             "ProxyUrl": "https://my/proxy",
             "QemuArgs": [],
-            "QemuCdrom": false,
-            "QemuDrives": [
-                {
-                    "Directory": "/foo/bar",
-                    "FileId": "red",
-                    "Id": "abc",
-                    "Options": "abc,qed",
-                    "Size": 200
-                },
-                {
-                    "Directory": null,
-                    "FileId": "wcd",
-                    "Id": "abc",
-                    "Options": "",
-                    "Size": 200
-                }
-            ],
-            "QemuFirmware": "linux",
-            "QemuFirmwareVariables": "/foo/bar",
-            "QemuGui": true,
-            "QemuKernel": null,
-            "QemuKvm": "auto",
-            "QemuMem": 123,
-            "QemuSmp": 2,
-            "QemuSwtpm": "auto",
-            "QemuVsock": "enabled",
-            "QemuVsockConnectionId": -2,
+            "RAM": 123,
+            "Register": "enabled",
             "Release": "53",
+            "Removable": false,
             "RemoveFiles": [],
             "RemovePackages": [
                 "all"
@@ -264,12 +272,14 @@ def test_config() -> None:
             "RepartOffline": true,
             "Repositories": [],
             "RepositoryKeyCheck": false,
+            "RepositoryKeyFetch": true,
             "RootPassword": [
                 "test1234",
                 false
             ],
             "RootShell": "/bin/tcsh",
             "RuntimeBuildSources": true,
+            "RuntimeHome": true,
             "RuntimeNetwork": "interface",
             "RuntimeScratch": "enabled",
             "RuntimeSize": 8589934592,
@@ -284,20 +294,40 @@ def test_config() -> None:
                 }
             ],
             "SELinuxRelabel": "disabled",
+            "SandboxTrees": [
+                {
+                    "Source": "/foo/bar",
+                    "Target": null
+                }
+            ],
             "SectorSize": null,
             "SecureBoot": true,
             "SecureBootAutoEnroll": true,
             "SecureBootCertificate": null,
+            "SecureBootCertificateSource": {
+                "Source": "",
+                "Type": "file"
+            },
             "SecureBootKey": "/path/to/keyfile",
             "SecureBootKeySource": {
                 "Source": "",
                 "Type": "file"
             },
-            "SecureBootSignTool": "pesign",
+            "SecureBootSignTool": "systemd-sbsign",
             "Seed": "7496d7d8-7f08-4a2b-96c6-ec8c43791b60",
             "ShimBootloader": "none",
             "Sign": false,
             "SignExpectedPcr": "disabled",
+            "SignExpectedPcrCertificate": "/my/cert",
+            "SignExpectedPcrCertificateSource": {
+                "Source": "",
+                "Type": "file"
+            },
+            "SignExpectedPcrKey": "/my/key",
+            "SignExpectedPcrKeySource": {
+                "Source": "",
+                "Type": "file"
+            },
             "SkeletonTrees": [
                 {
                     "Source": "/foo/bar",
@@ -309,36 +339,61 @@ def test_config() -> None:
                 }
             ],
             "SourceDateEpoch": 12345,
-            "SplitArtifacts": true,
+            "SplitArtifacts": [
+                "uki",
+                "kernel"
+            ],
             "Ssh": false,
             "SshCertificate": "/path/to/cert",
             "SshKey": null,
             "SyncScripts": [
                 "/sync"
             ],
+            "SysupdateDirectory": "/sysupdate",
+            "TPM": "auto",
             "Timezone": null,
             "ToolsTree": null,
             "ToolsTreeCertificates": true,
             "ToolsTreeDistribution": "fedora",
             "ToolsTreeMirror": null,
-            "ToolsTreePackageManagerTrees": [
-                {
-                    "Source": "/a/b/c",
-                    "Target": "/"
-                }
+            "ToolsTreePackageDirectories": [
+                "/abc"
             ],
             "ToolsTreePackages": [],
             "ToolsTreeRelease": null,
             "ToolsTreeRepositories": [
                 "abc"
             ],
+            "ToolsTreeSandboxTrees": [
+                {
+                    "Source": "/a/b/c",
+                    "Target": "/"
+                }
+            ],
             "UnifiedKernelImageFormat": "myuki",
+            "UnifiedKernelImageProfiles": [
+                {
+                    "Cmdline": [
+                        "key=value"
+                    ],
+                    "Profile": {
+                        "key": "value"
+                    }
+                }
+            ],
             "UnifiedKernelImages": "auto",
             "UnitProperties": [
                 "PROPERTY=VALUE"
             ],
             "UseSubvolumes": "auto",
+            "VSock": "enabled",
+            "VSockCID": -2,
+            "Verity": "enabled",
             "VerityCertificate": "/path/to/cert",
+            "VerityCertificateSource": {
+                "Source": "",
+                "Type": "file"
+            },
             "VerityKey": null,
             "VerityKeySource": {
                 "Source": "",
@@ -361,7 +416,6 @@ def test_config() -> None:
     )
 
     args = Config(
-        acl=True,
         architecture=Architecture.ia64,
         autologin=False,
         base_trees=[Path("/hello/world")],
@@ -371,148 +425,166 @@ def test_config() -> None:
         build_dir=None,
         build_packages=["pkg1", "pkg2"],
         build_scripts=[Path("/path/to/buildscript")],
+        build_sources_ephemeral=BuildSourcesEphemeral.yes,
         build_sources=[ConfigTree(Path("/qux"), Path("/frob"))],
-        build_sources_ephemeral=True,
         cache_dir=Path("/is/this/the/cachedir"),
         cacheonly=Cacheonly.always,
-        checksum= False,
+        cdrom=False,
+        checksum=False,
         clean_package_metadata=ConfigFeature.auto,
         clean_scripts=[Path("/clean")],
         compress_level=3,
         compress_output=Compression.bz2,
         configure_scripts=[Path("/configure")],
-        credentials= {"credkey": "credval"},
+        console=ConsoleMode.gui,
+        cpus=2,
+        credentials={"credkey": "credval"},
         dependencies=["dep1"],
         distribution=Distribution.fedora,
-        environment={"foo": "foo", "BAR": "BAR", "Qux": "Qux"},
+        drives=[Drive("abc", 200, Path("/foo/bar"), "abc,qed", "red"), Drive("abc", 200, None, "", "wcd")],
         environment_files=[],
+        environment={"foo": "foo", "BAR": "BAR", "Qux": "Qux"},
         ephemeral=True,
         extra_search_paths=[],
         extra_trees=[],
+        files=[],
         finalize_scripts=[],
+        firmware_variables=Path("/foo/bar"),
+        firmware=Firmware.linux,
         forward_journal=Path("/mkosi.journal"),
+        history=True,
         hostname=None,
-        vmm=Vmm.qemu,
-        image="default",
         image_id="myimage",
         image_version="5",
-        include=[],
-        incremental=False,
-        initrd_include=[Path("/foo/bar"),],
+        image="default",
+        incremental=Incremental.no,
         initrd_packages=["clevis"],
         initrd_volatile_packages=["abc"],
         initrds=[Path("/efi/initrd1"), Path("/efi/initrd2")],
-        microcode_host=True,
-        kernel_command_line=[],
         kernel_command_line_extra=["look", "im", "on", "the", "kernel", "command", "line"],
+        kernel_command_line=[],
         kernel_modules_exclude=["nvidia"],
-        kernel_modules_include=["loop"],
         kernel_modules_include_host=True,
-        kernel_modules_initrd=True,
+        kernel_modules_include=["loop"],
         kernel_modules_initrd_exclude=[],
-        kernel_modules_initrd_include=[],
         kernel_modules_initrd_include_host=True,
+        kernel_modules_initrd_include=[],
+        kernel_modules_initrd=True,
         key=None,
         keymap="wow, so much keymap",
+        kvm=ConfigFeature.auto,
+        linux=None,
         local_mirror=None,
-        locale="en_C.UTF-8",
         locale_messages="",
+        locale="en_C.UTF-8",
+        machine_id=uuid.UUID("b58253b0cc924a348782bcd99b20d07f"),
         machine="machine",
         make_initrd=False,
         manifest_format=[ManifestFormat.json, ManifestFormat.changelog],
+        microcode_host=True,
+        devicetree=Path("freescale/imx8mm-verdin-nonwifi-dev.dtb"),
         minimum_version=GenericVersion("123"),
         mirror=None,
         nspawn_settings=None,
-        output="outfile",
+        openpgp_tool="gpg",
         output_dir=Path("/your/output/here"),
         output_format=OutputFormat.uki,
+        output_mode=0o123,
+        output="outfile",
         overlay=True,
         package_cache_dir=Path("/a/b/c"),
         package_directories=[],
-        package_manager_trees=[ConfigTree(Path("/foo/bar"), None)],
         packages=[],
         pass_environment=["abc"],
         passphrase=None,
         postinst_scripts=[Path("/bar/qux")],
         postoutput_scripts=[Path("/foo/src")],
         prepare_scripts=[Path("/run/foo")],
-        profile="profile",
+        profiles=["profile"],
         proxy_client_certificate=Path("/my/client/cert"),
         proxy_client_key=Path("/my/client/key"),
         proxy_exclude=["www.example.com"],
         proxy_peer_certificate=Path("/my/peer/cert"),
         proxy_url="https://my/proxy",
         qemu_args=[],
-        qemu_cdrom=False,
-        qemu_drives=[
-            QemuDrive("abc", 200, Path("/foo/bar"), "abc,qed", "red"),
-            QemuDrive("abc", 200, None, "", "wcd"),
-        ],
-        qemu_firmware=QemuFirmware.linux,
-        qemu_firmware_variables=Path("/foo/bar"),
-        qemu_gui=True,
-        qemu_kernel=None,
-        qemu_kvm=ConfigFeature.auto,
-        qemu_mem=123,
-        qemu_smp=2,
-        qemu_swtpm=ConfigFeature.auto,
-        qemu_vsock=ConfigFeature.enabled,
-        qemu_vsock_cid=QemuVsockCID.hash,
+        ram=123,
+        register=ConfigFeature.enabled,
         release="53",
+        removable=False,
         remove_files=[],
         remove_packages=["all"],
         repart_dirs=[],
         repart_offline=True,
         repositories=[],
         repository_key_check=False,
+        repository_key_fetch=True,
         root_password=("test1234", False),
         root_shell="/bin/tcsh",
         runtime_build_sources=True,
+        runtime_home=True,
         runtime_network=Network.interface,
         runtime_scratch=ConfigFeature.enabled,
         runtime_size=8589934592,
-        runtime_trees=[ConfigTree(Path("/foo/bar"), Path("/baz")), ConfigTree(Path("/bar/baz"), Path("/qux"))],
+        runtime_trees=[
+            ConfigTree(Path("/foo/bar"), Path("/baz")),
+            ConfigTree(Path("/bar/baz"), Path("/qux")),
+        ],
+        sandbox_trees=[ConfigTree(Path("/foo/bar"), None)],
         sector_size=None,
-        secure_boot=True,
         secure_boot_auto_enroll=True,
+        secure_boot_certificate_source=CertificateSource(type=CertificateSourceType.file),
         secure_boot_certificate=None,
+        secure_boot_key_source=KeySource(type=KeySourceType.file),
         secure_boot_key=Path("/path/to/keyfile"),
-        secure_boot_key_source=KeySource(type=KeySource.Type.file),
-        secure_boot_sign_tool=SecureBootSignTool.pesign,
+        secure_boot_sign_tool=SecureBootSignTool.systemd_sbsign,
+        secure_boot=True,
         seed=uuid.UUID("7496d7d8-7f08-4a2b-96c6-ec8c43791b60"),
         selinux_relabel=ConfigFeature.disabled,
         shim_bootloader=ShimBootloader.none,
-        sign=False,
+        sign_expected_pcr_certificate_source=CertificateSource(type=CertificateSourceType.file),
+        sign_expected_pcr_certificate=Path("/my/cert"),
+        sign_expected_pcr_key_source=KeySource(type=KeySourceType.file),
+        sign_expected_pcr_key=Path("/my/key"),
         sign_expected_pcr=ConfigFeature.disabled,
+        sign=False,
         skeleton_trees=[ConfigTree(Path("/foo/bar"), Path("/")), ConfigTree(Path("/bar/baz"), Path("/qux"))],
         source_date_epoch=12345,
-        split_artifacts=True,
-        ssh=False,
+        split_artifacts=[ArtifactOutput.uki, ArtifactOutput.kernel],
         ssh_certificate=Path("/path/to/cert"),
         ssh_key=None,
+        ssh=False,
         sync_scripts=[Path("/sync")],
+        sysupdate_dir=Path("/sysupdate"),
         timezone=None,
-        tools_tree=None,
         tools_tree_certificates=True,
         tools_tree_distribution=Distribution.fedora,
         tools_tree_mirror=None,
-        tools_tree_package_manager_trees=[ConfigTree(Path("/a/b/c"), Path("/"))],
+        tools_tree_package_directories=[Path("/abc")],
         tools_tree_packages=[],
         tools_tree_release=None,
         tools_tree_repositories=["abc"],
+        tools_tree_sandbox_trees=[ConfigTree(Path("/a/b/c"), Path("/"))],
+        tools_tree=None,
+        tpm=ConfigFeature.auto,
         unified_kernel_image_format="myuki",
+        unified_kernel_image_profiles=[UKIProfile(profile={"key": "value"}, cmdline=["key=value"])],
         unified_kernel_images=ConfigFeature.auto,
         unit_properties=["PROPERTY=VALUE"],
         use_subvolumes=ConfigFeature.auto,
+        verity_certificate_source=CertificateSource(type=CertificateSourceType.file),
         verity_certificate=Path("/path/to/cert"),
+        verity_key_source=KeySource(type=KeySourceType.file),
         verity_key=None,
-        verity_key_source=KeySource(type=KeySource.Type.file),
+        verity=ConfigFeature.enabled,
+        vmm=Vmm.qemu,
         volatile_package_directories=[Path("def")],
         volatile_packages=["abc"],
+        vsock_cid=VsockCID.hash,
+        vsock=ConfigFeature.enabled,
         with_docs=True,
         with_network=False,
         with_recommends=True,
-        with_tests= True,
+        with_tests=True,
         workspace_dir=Path("/cwd"),
     )
 

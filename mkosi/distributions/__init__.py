@@ -2,9 +2,9 @@
 
 import enum
 import importlib
-import re
 import urllib.parse
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional, cast
 
 from mkosi.util import StrEnum, read_env_file
@@ -16,10 +16,10 @@ if TYPE_CHECKING:
 
 
 class PackageType(StrEnum):
-    none   = enum.auto()
-    rpm    = enum.auto()
-    deb    = enum.auto()
-    pkg    = enum.auto()
+    none = enum.auto()
+    rpm = enum.auto()
+    deb = enum.auto()
+    pkg = enum.auto()
 
 
 class DistributionInstaller:
@@ -30,6 +30,10 @@ class DistributionInstaller:
     @classmethod
     def package_manager(cls, config: "Config") -> type["PackageManager"]:
         raise NotImplementedError
+
+    @classmethod
+    def keyring(cls, context: "Context") -> None:
+        pass
 
     @classmethod
     def setup(cls, context: "Context") -> None:
@@ -75,19 +79,21 @@ class DistributionInstaller:
 class Distribution(StrEnum):
     # Please consult docs/distribution-policy.md and contact one
     # of the mkosi maintainers before implementing a new distribution.
-    fedora       = enum.auto()
-    debian       = enum.auto()
-    ubuntu       = enum.auto()
-    arch         = enum.auto()
-    opensuse     = enum.auto()
-    mageia       = enum.auto()
-    centos       = enum.auto()
-    rhel         = enum.auto()
-    rhel_ubi     = enum.auto()
+    fedora = enum.auto()
+    debian = enum.auto()
+    kali = enum.auto()
+    ubuntu = enum.auto()
+    arch = enum.auto()
+    opensuse = enum.auto()
+    mageia = enum.auto()
+    centos = enum.auto()
+    rhel = enum.auto()
+    rhel_ubi = enum.auto()
     openmandriva = enum.auto()
-    rocky        = enum.auto()
-    alma         = enum.auto()
-    custom       = enum.auto()
+    rocky = enum.auto()
+    alma = enum.auto()
+    azure = enum.auto()
+    custom = enum.auto()
 
     def is_centos_variant(self) -> bool:
         return self in (
@@ -99,13 +105,30 @@ class Distribution(StrEnum):
         )
 
     def is_apt_distribution(self) -> bool:
-        return self in (Distribution.debian, Distribution.ubuntu)
+        return self in (Distribution.debian, Distribution.ubuntu, Distribution.kali)
+
+    def is_rpm_distribution(self) -> bool:
+        return self in (
+            Distribution.azure,
+            Distribution.fedora,
+            Distribution.opensuse,
+            Distribution.mageia,
+            Distribution.centos,
+            Distribution.rhel,
+            Distribution.rhel_ubi,
+            Distribution.openmandriva,
+            Distribution.rocky,
+            Distribution.alma,
+        )
 
     def pretty_name(self) -> str:
         return self.installer().pretty_name()
 
     def package_manager(self, config: "Config") -> type["PackageManager"]:
         return self.installer().package_manager(config)
+
+    def keyring(self, context: "Context") -> None:
+        return self.installer().keyring(context)
 
     def setup(self, context: "Context") -> None:
         return self.installer().setup(context)
@@ -141,46 +164,46 @@ class Distribution(StrEnum):
         return self.installer().package_manager(context.config).createrepo(context)
 
     def installer(self) -> type[DistributionInstaller]:
-        modname = str(self).replace('-', '_')
+        modname = str(self).replace("-", "_")
         mod = importlib.import_module(f"mkosi.distributions.{modname}")
         installer = getattr(mod, "Installer")
         assert issubclass(installer, DistributionInstaller)
         return cast(type[DistributionInstaller], installer)
 
 
-def detect_distribution() -> tuple[Optional[Distribution], Optional[str]]:
+def detect_distribution(root: Path = Path("/")) -> tuple[Optional[Distribution], Optional[str]]:
     try:
-        os_release = read_env_file("/usr/lib/os-release")
+        os_release = read_env_file(root / "etc/os-release")
     except FileNotFoundError:
-        return None, None
+        try:
+            os_release = read_env_file(root / "usr/lib/os-release")
+        except FileNotFoundError:
+            return None, None
 
     dist_id = os_release.get("ID", "linux")
     dist_id_like = os_release.get("ID_LIKE", "").split()
-    version = os_release.get("VERSION", None)
     version_id = os_release.get("VERSION_ID", None)
     version_codename = os_release.get("VERSION_CODENAME", None)
-    extracted_codename = None
 
-    if version:
-        # extract Debian release codename
-        m = re.search(r"\((.*?)\)", version)
-        if m:
-            extracted_codename = m.group(1)
+    quirks = {
+        "azurelinux": Distribution.azure,
+    }
 
     d: Optional[Distribution] = None
     for the_id in [dist_id, *dist_id_like]:
-        d = Distribution.__members__.get(the_id, None)
+        d = Distribution.__members__.get(the_id, quirks.get(the_id))
         if d is not None:
             break
 
-    if d in {Distribution.debian, Distribution.ubuntu} and (version_codename or extracted_codename):
-        version_id = version_codename or extracted_codename
+    if d and d.is_apt_distribution() and version_codename:
+        version_id = version_codename
 
     return d, version_id
 
 
 def join_mirror(mirror: str, link: str) -> str:
-    # urljoin() behaves weirdly if the base does not end with a / or the path starts with a / so fix them up as needed.
+    # urljoin() behaves weirdly if the base does not end with a / or the path starts with a / so fix them up
+    # as needed.
     if not mirror.endswith("/"):
         mirror = f"{mirror}/"
     link = link.removeprefix("/")

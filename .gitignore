@@ -3,7 +3,9 @@
 *.cache-pre-inst
 .cache
 .mkosi.1
+.mkosi-addon.1
 .mkosi-initrd.1
+.mkosi-sandbox.1
 .mypy_cache/
 .project
 .pydevproject
@@ -19,7 +21,9 @@
 /mkosi.output
 /mkosi.nspawn
 /mkosi.rootpw
+mkosi.local
 mkosi.local.conf
+mkosi.tools
 /mkosi.key
 /mkosi.crt
 __pycache__

@@ -2,5 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -ex
 
-pandoc -t man -s -o mkosi/resources/mkosi.1 mkosi/resources/mkosi.md
-pandoc -t man -s -o mkosi/initrd/resources/mkosi-initrd.1 mkosi/initrd/resources/mkosi-initrd.md
+pandoc -t man -s -o mkosi/resources/man/mkosi.1 mkosi/resources/man/mkosi.1.md
+pandoc -t man -s -o mkosi/resources/man/mkosi-addon.1 mkosi/resources/man/mkosi-addon.1.md
+pandoc -t man -s -o mkosi/resources/man/mkosi-initrd.1 mkosi/resources/man/mkosi-initrd.1.md
+pandoc -t man -s -o mkosi/resources/man/mkosi-sandbox.1 mkosi/resources/man/mkosi-sandbox.1.md
+pandoc -t man -s -o mkosi/resources/man/mkosi.news.7 mkosi/resources/man/mkosi.news.7.md

@@ -7,7 +7,6 @@ from mkosi.context import Context
 from mkosi.distributions import fedora, join_mirror
 from mkosi.installer.rpm import RpmRepository, find_rpm_gpgkey
 from mkosi.log import die
-from mkosi.util import listify
 
 
 class Installer(fedora.Installer):
@@ -28,7 +27,6 @@ class Installer(fedora.Installer):
         cls.install_packages(context, ["filesystem"], apivfs=False)
 
     @classmethod
-    @listify
     def repositories(cls, context: Context) -> Iterable[RpmRepository]:
         mirror = context.config.mirror or "http://mirror.openmandriva.org"
 
@@ -36,7 +34,8 @@ class Installer(fedora.Installer):
             find_rpm_gpgkey(
                 context,
                 "RPM-GPG-KEY-OpenMandriva",
-            ) or "https://raw.githubusercontent.com/OpenMandrivaAssociation/openmandriva-repos/master/RPM-GPG-KEY-OpenMandriva",
+                "https://raw.githubusercontent.com/OpenMandrivaAssociation/openmandriva-repos/master/RPM-GPG-KEY-OpenMandriva",
+            ),
         )
 
         if context.config.local_mirror:
@@ -50,10 +49,10 @@ class Installer(fedora.Installer):
     @classmethod
     def architecture(cls, arch: Architecture) -> str:
         a = {
-            Architecture.x86_64  : "x86_64",
-            Architecture.arm64   : "aarch64",
-            Architecture.riscv64 : "riscv64",
-        }.get(arch)
+            Architecture.x86_64:  "x86_64",
+            Architecture.arm64:   "aarch64",
+            Architecture.riscv64: "riscv64",
+        }.get(arch)  # fmt: skip
 
         if not a:
             die(f"Architecture {a} is not supported by OpenMandriva")

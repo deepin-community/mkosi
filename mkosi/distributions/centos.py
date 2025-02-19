@@ -14,7 +14,6 @@ from mkosi.installer import PackageManager
 from mkosi.installer.dnf import Dnf
 from mkosi.installer.rpm import RpmRepository, find_rpm_gpgkey, setup_rpm
 from mkosi.log import die
-from mkosi.util import listify
 from mkosi.versioncomp import GenericVersion
 
 CENTOS_SIG_REPO_PRIORITY = 50
@@ -35,7 +34,7 @@ class Installer(DistributionInstaller):
 
     @classmethod
     def default_release(cls) -> str:
-        return "9"
+        return "10"
 
     @classmethod
     def default_tools_tree_distribution(cls) -> Distribution:
@@ -54,8 +53,8 @@ class Installer(DistributionInstaller):
         # The Hyperscale SIG uses /usr/lib/sysimage/rpm in its rebuild of rpm for C9S that's shipped in the
         # hyperscale-packages-experimental repository.
         if (
-            GenericVersion(context.config.release) > 9 or
-            "hyperscale-packages-experimental" in context.config.repositories
+            GenericVersion(context.config.release) > 9
+            or "hyperscale-packages-experimental" in context.config.repositories
         ):
             return "/usr/lib/sysimage/rpm"
 
@@ -66,9 +65,10 @@ class Installer(DistributionInstaller):
         if GenericVersion(context.config.release) <= 8:
             die(f"{cls.pretty_name()} Stream 8 or earlier variants are not supported")
 
-        Dnf.setup(context, cls.repositories(context))
-        (context.pkgmngr / "etc/dnf/vars/stream").write_text(f"{context.config.release}-stream\n")
         setup_rpm(context, dbpath=cls.dbpath(context))
+
+        Dnf.setup(context, list(cls.repositories(context)))
+        (context.sandbox_tree / "etc/dnf/vars/stream").write_text(f"{context.config.release}-stream\n")
 
     @classmethod
     def install(cls, context: Context) -> None:
@@ -85,11 +85,11 @@ class Installer(DistributionInstaller):
     @classmethod
     def architecture(cls, arch: Architecture) -> str:
         a = {
-            Architecture.x86_64   : "x86_64",
-            Architecture.ppc64_le : "ppc64le",
-            Architecture.s390x    : "s390x",
-            Architecture.arm64    : "aarch64",
-        }.get(arch)
+            Architecture.x86_64:   "x86_64",
+            Architecture.ppc64_le: "ppc64le",
+            Architecture.s390x:    "s390x",
+            Architecture.arm64:    "aarch64",
+        }.get(arch)  # fmt: skip
 
         if not a:
             die(f"Architecture {a} is not supported by {cls.pretty_name()}")
@@ -98,11 +98,35 @@ class Installer(DistributionInstaller):
 
     @staticmethod
     def gpgurls(context: Context) -> tuple[str, ...]:
-        rel = "RPM-GPG-KEY-CentOS-Official" if context.config.release == "9" else "RPM-GPG-KEY-CentOS-Official-SHA256"
-        return tuple(
-            find_rpm_gpgkey(context, key) or f"https://www.centos.org/keys/{key}"
-            for key in (rel, "RPM-GPG-KEY-CentOS-SIG-Extras")
+        # First, start with the names of the appropriate keys in /etc/pki/rpm-gpg.
+
+        if context.config.release == "9":
+            rel = "RPM-GPG-KEY-centosofficial"
+        else:
+            rel = "RPM-GPG-KEY-centosofficial-SHA256"
+
+        one = find_rpm_gpgkey(context, rel, required=False)
+
+        # Next, follow up with the names of the appropriate keys in /usr/share/distribution-gpg-keys.
+
+        if context.config.release == "9":
+            rel = "RPM-GPG-KEY-CentOS-Official"
+        else:
+            rel = "RPM-GPG-KEY-CentOS-Official-SHA256"
+
+        # The key in /usr/share/distribution-gpg-keys is only required if we didn't find one in
+        # /etc/pki/rpm-gpg.
+        two = find_rpm_gpgkey(context, rel, f"https://www.centos.org/keys/{rel}", required=bool(one))
+
+        # Finally, look up the key for the SIG-Extras repository.
+
+        sig = find_rpm_gpgkey(
+            context,
+            "RPM-GPG-KEY-CentOS-SIG-Extras",
+            "https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Extras",
         )
+
+        return tuple(key for key in (one, two, sig) if key is not None)
 
     @classmethod
     def repository_variants(cls, context: Context, repo: str) -> Iterable[RpmRepository]:
@@ -176,7 +200,6 @@ class Installer(DistributionInstaller):
                 )
 
     @classmethod
-    @listify
     def repositories(cls, context: Context) -> Iterable[RpmRepository]:
         if context.config.local_mirror:
             yield from cls.repository_variants(context, "AppStream")
@@ -196,22 +219,29 @@ class Installer(DistributionInstaller):
             find_rpm_gpgkey(
                 context,
                 f"RPM-GPG-KEY-EPEL-{context.config.release}",
-            ) or f"https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-{context.config.release}",
+                f"https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-{context.config.release}",
+            ),
         )
 
         if context.config.local_mirror:
             return
 
         if mirror := context.config.mirror:
-            for repo, dir in (
+            # epel-next does not exist anymore since EPEL 10.
+            repodirs = [
                 ("epel", "epel"),
-                ("epel-next", "epel/next"),
                 ("epel-testing", "epel/testing"),
-                ("epel-next-testing", "epel/testing/next")
-            ):
-                # For EPEL we make the assumption that epel is mirrored in the parent directory of the mirror URL and
-                # path we were given. Since this doesn't work for all scenarios, we also allow overriding the mirror
-                # via ane environment variable.
+            ]
+            if int(context.config.release) < 10:
+                repodirs += [
+                    ("epel-next", "epel/next"),
+                    ("epel-next-testing", "epel/testing/next"),
+                ]
+
+            for repo, dir in repodirs:
+                # For EPEL we make the assumption that epel is mirrored in the parent directory of the mirror
+                # URL and path we were given. Since this doesn't work for all scenarios, we also allow
+                # overriding the mirror via an environment variable.
                 url = context.config.environment.get("EPEL_MIRROR", join_mirror(mirror, "../fedora"))
                 yield RpmRepository(
                     repo,
@@ -233,57 +263,71 @@ class Installer(DistributionInstaller):
                 )
         else:
             url = "metalink=https://mirrors.fedoraproject.org/metalink?arch=$basearch"
-            for repo in ("epel", "epel-next"):
-                yield RpmRepository(repo, f"{url}&repo={repo}-$releasever", gpgurls, enabled=False)
+
+            # epel-next does not exist anymore since EPEL 10.
+            repos = ["epel"]
+            if int(context.config.release) < 10:
+                repos += ["epel-next"]
+
+            for repo in repos:
+                yield RpmRepository(
+                    repo,
+                    f"{url}&repo={repo}-$releasever",
+                    gpgurls,
+                    enabled=False,
+                )
                 yield RpmRepository(
                     f"{repo}-debuginfo",
                     f"{url}&repo={repo}-debug-$releasever",
                     gpgurls,
-                    enabled=False
+                    enabled=False,
                 )
                 yield RpmRepository(
                     f"{repo}-source",
                     f"{url}&repo={repo}-source-$releasever",
                     gpgurls,
-                    enabled=False
+                    enabled=False,
                 )
 
             yield RpmRepository(
                 "epel-testing",
                 f"{url}&repo=testing-epel$releasever",
                 gpgurls,
-                enabled=False
+                enabled=False,
             )
             yield RpmRepository(
                 "epel-testing-debuginfo",
                 f"{url}&repo=testing-debug-epel$releasever",
                 gpgurls,
-                enabled=False
+                enabled=False,
             )
             yield RpmRepository(
                 "epel-testing-source",
                 f"{url}&repo=testing-source-epel$releasever",
                 gpgurls,
-                enabled=False
-            )
-            yield RpmRepository(
-                "epel-next-testing",
-                f"{url}&repo=epel-testing-next-$releasever",
-                gpgurls,
-                enabled=False
-            )
-            yield RpmRepository(
-                "epel-next-testing-debuginfo",
-                f"{url}&repo=epel-testing-next-debug-$releasever",
-                gpgurls,
                 enabled=False,
             )
-            yield RpmRepository(
-                "epel-next-testing-source",
-                f"{url}&repo=epel-testing-next-source-$releasever",
-                gpgurls,
-                enabled=False,
-            )
+
+            # epel-next does not exist anymore since EPEL 10.
+            if int(context.config.release) < 10:
+                yield RpmRepository(
+                    "epel-next-testing",
+                    f"{url}&repo=epel-testing-next-$releasever",
+                    gpgurls,
+                    enabled=False,
+                )
+                yield RpmRepository(
+                    "epel-next-testing-debuginfo",
+                    f"{url}&repo=epel-testing-next-debug-$releasever",
+                    gpgurls,
+                    enabled=False,
+                )
+                yield RpmRepository(
+                    "epel-next-testing-source",
+                    f"{url}&repo=epel-testing-next-source-$releasever",
+                    gpgurls,
+                    enabled=False,
+                )
 
     @classmethod
     def sig_repositories(cls, context: Context) -> Iterable[RpmRepository]:
@@ -299,7 +343,9 @@ class Installer(DistributionInstaller):
         )
 
         for sig, components, keys in sigs:
-            gpgurls = tuple(find_rpm_gpgkey(context, key) or f"https://www.centos.org/keys/{key}" for key in keys)
+            gpgurls = tuple(
+                find_rpm_gpgkey(context, key, f"https://www.centos.org/keys/{key}") for key in keys
+            )
 
             for c in components:
                 if mirror := context.config.mirror:
