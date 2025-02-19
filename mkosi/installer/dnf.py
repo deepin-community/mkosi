@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 import textwrap
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Optional
 
 from mkosi.config import Cacheonly, Config
 from mkosi.context import Context
 from mkosi.installer import PackageManager
 from mkosi.installer.rpm import RpmRepository, rpm_cmd
 from mkosi.log import ARG_DEBUG
-from mkosi.run import run
-from mkosi.sandbox import Mount, apivfs_cmd
-from mkosi.types import _FILE, CompletedProcess, PathString
+from mkosi.run import CompletedProcess, run, workdir
+from mkosi.util import _FILE, PathString
 
 
 class Dnf(PackageManager):
@@ -18,7 +18,7 @@ class Dnf(PackageManager):
     def executable(cls, config: Config) -> str:
         # Allow the user to override autodetection with an environment variable
         dnf = config.environment.get("MKOSI_DNF")
-        return Path(dnf or config.find_binary("dnf5") or config.find_binary("dnf") or "yum").name
+        return Path(dnf or config.find_binary("dnf5") or "dnf").name
 
     @classmethod
     def subdir(cls, config: Config) -> Path:
@@ -27,40 +27,44 @@ class Dnf(PackageManager):
     @classmethod
     def cache_subdirs(cls, cache: Path) -> list[Path]:
         return [
-            p / "packages"
-            for p in cache.iterdir()
-            if p.is_dir() and "-" in p.name and "mkosi" not in p.name
+            p / "packages" for p in cache.iterdir() if p.is_dir() and "-" in p.name and "mkosi" not in p.name
         ]
 
     @classmethod
     def scripts(cls, context: Context) -> dict[str, list[PathString]]:
         return {
-            "dnf": apivfs_cmd() + cls.env_cmd(context) + cls.cmd(context),
-            "rpm": apivfs_cmd() + rpm_cmd(),
-            "mkosi-install"  : ["dnf", "install"],
-            "mkosi-upgrade"  : ["dnf", "upgrade"],
-            "mkosi-remove"   : ["dnf", "remove"],
+            "dnf": cls.apivfs_script_cmd(context) + cls.env_cmd(context) + cls.cmd(context),
+            "rpm": cls.apivfs_script_cmd(context) + rpm_cmd(),
+            "mkosi-install":   ["dnf", "install"],
+            "mkosi-upgrade":   ["dnf", "upgrade"],
+            "mkosi-remove":    ["dnf", "remove"],
             "mkosi-reinstall": ["dnf", "reinstall"],
-        }
+        }  # fmt: skip
 
     @classmethod
-    def setup(cls, context: Context, repositories: Iterable[RpmRepository], filelists: bool = True) -> None:
-        (context.pkgmngr / "etc/dnf/vars").mkdir(parents=True, exist_ok=True)
-        (context.pkgmngr / "etc/yum.repos.d").mkdir(parents=True, exist_ok=True)
+    def setup(
+        cls,
+        context: Context,
+        repositories: Sequence[RpmRepository],
+        filelists: bool = True,
+        metadata_expire: Optional[str] = None,
+    ) -> None:
+        (context.sandbox_tree / "etc/dnf/vars").mkdir(parents=True, exist_ok=True)
+        (context.sandbox_tree / "etc/yum.repos.d").mkdir(parents=True, exist_ok=True)
 
-        config = context.pkgmngr / "etc/dnf/dnf.conf"
+        config = context.sandbox_tree / "etc/dnf/dnf.conf"
 
         if not config.exists():
             config.parent.mkdir(exist_ok=True, parents=True)
             with config.open("w") as f:
                 # Make sure we download filelists so all dependencies can be resolved.
                 # See https://bugzilla.redhat.com/show_bug.cgi?id=2180842
-                if cls.executable(context.config).endswith("dnf5") and filelists:
+                if cls.executable(context.config) == "dnf5" and filelists:
                     f.write("[main]\noptional_metadata_types=filelists\n")
 
-        # The versionlock plugin will fail if enabled without a configuration file so lets' write a noop configuration
-        # file to make it happy which can be overridden by users.
-        versionlock = context.pkgmngr / "etc/dnf/plugins/versionlock.conf"
+        # The versionlock plugin will fail if enabled without a configuration file so lets' write a noop
+        # configuration file to make it happy which can be overridden by users.
+        versionlock = context.sandbox_tree / "etc/dnf/plugins/versionlock.conf"
         if not versionlock.exists():
             versionlock.parent.mkdir(parents=True, exist_ok=True)
             versionlock.write_text(
@@ -73,7 +77,7 @@ class Dnf(PackageManager):
                 )
             )
 
-        repofile = context.pkgmngr / "etc/yum.repos.d/mkosi.repo"
+        repofile = context.sandbox_tree / "etc/yum.repos.d/mkosi.repo"
         if not repofile.exists():
             repofile.parent.mkdir(exist_ok=True, parents=True)
             with repofile.open("w") as f:
@@ -98,6 +102,8 @@ class Dnf(PackageManager):
                         f.write(f"sslclientkey={repo.sslclientkey}\n")
                     if repo.priority:
                         f.write(f"priority={repo.priority}\n")
+                    if metadata_expire:
+                        f.write(f"metadata_expire={metadata_expire}\n")
 
                     for i, url in enumerate(repo.gpgurls):
                         f.write("gpgkey=" if i == 0 else len("gpgkey=") * " ")
@@ -113,9 +119,9 @@ class Dnf(PackageManager):
 
     @classmethod
     def cmd(
-            cls,
-            context: Context,
-            cached_metadata: bool = True,
+        cls,
+        context: Context,
+        cached_metadata: bool = True,
     ) -> list[PathString]:
         dnf = cls.executable(context.config)
 
@@ -131,11 +137,11 @@ class Dnf(PackageManager):
             f"--setopt=persistdir=/var/lib/{cls.subdir(context.config)}",
             f"--setopt=install_weak_deps={int(context.config.with_recommends)}",
             "--setopt=check_config_file_age=0",
-            "--disable-plugin=*" if dnf.endswith("dnf5") else "--disableplugin=*",
-        ]
+            "--disable-plugin=*" if dnf == "dnf5" else "--disableplugin=*",
+        ]  # fmt: skip
 
         for plugin in ("builddep", "versionlock"):
-            cmdline += ["--enable-plugin", plugin] if dnf.endswith("dnf5") else ["--enableplugin", plugin]
+            cmdline += ["--enable-plugin", plugin] if dnf == "dnf5" else ["--enableplugin", plugin]
 
         if ARG_DEBUG.get():
             cmdline += ["--setopt=debuglevel=10"]
@@ -144,7 +150,7 @@ class Dnf(PackageManager):
             cmdline += ["--nogpgcheck"]
 
         if context.config.repositories:
-            opt = "--enable-repo" if dnf.endswith("dnf5") else "--enablerepo"
+            opt = "--enable-repo" if dnf == "dnf5" else "--enablerepo"
             cmdline += [f"{opt}={repo}" for repo in context.config.repositories]
 
         if context.config.cacheonly == Cacheonly.always:
@@ -155,12 +161,14 @@ class Dnf(PackageManager):
                 cmdline += ["--setopt=cacheonly=metadata"]
 
         if not context.config.architecture.is_native():
-            cmdline += [f"--forcearch={context.config.distribution.architecture(context.config.architecture)}"]
+            cmdline += [
+                f"--forcearch={context.config.distribution.architecture(context.config.architecture)}"
+            ]
 
         if not context.config.with_docs:
-            cmdline += ["--no-docs" if dnf.endswith("dnf5") else "--nodocs"]
+            cmdline += ["--no-docs" if dnf == "dnf5" else "--nodocs"]
 
-        if dnf.endswith("dnf5"):
+        if dnf == "dnf5":
             cmdline += ["--use-host-config"]
         else:
             cmdline += [
@@ -194,21 +202,13 @@ class Dnf(PackageManager):
         try:
             return run(
                 cls.cmd(context, cached_metadata=cached_metadata) + [operation, *arguments],
-                sandbox=(
-                    context.sandbox(
-                        binary=cls.executable(context.config),
-                        network=True,
-                        vartmp=True,
-                        mounts=[Mount(context.root, "/buildroot"), *cls.mounts(context)],
-                        extra=apivfs_cmd() if apivfs else [],
-                    )
-                ),
-                env=context.config.environment | cls.finalize_environment(context),
+                sandbox=cls.sandbox(context, apivfs=apivfs),
+                env=cls.finalize_environment(context),
                 stdout=stdout,
             )
         finally:
-            # dnf interprets the log directory relative to the install root so there's nothing we can do but to remove
-            # the log files from the install root afterwards.
+            # dnf interprets the log directory relative to the install root so there's nothing we can do but
+            # to remove the log files from the install root afterwards.
             if (context.root / "var/log").exists():
                 for p in (context.root / "var/log").iterdir():
                     if any(p.name.startswith(prefix) for prefix in ("dnf", "hawkey", "yum")):
@@ -225,10 +225,12 @@ class Dnf(PackageManager):
 
     @classmethod
     def createrepo(cls, context: Context) -> None:
-        run(["createrepo_c", context.repository],
-            sandbox=context.sandbox(binary="createrepo_c", mounts=[Mount(context.repository, context.repository)]))
+        run(
+            ["createrepo_c", workdir(context.repository)],
+            sandbox=context.sandbox(options=["--bind", context.repository, workdir(context.repository)]),
+        )
 
-        (context.pkgmngr / "etc/yum.repos.d/mkosi-local.repo").write_text(
+        (context.sandbox_tree / "etc/yum.repos.d/mkosi-local.repo").write_text(
             textwrap.dedent(
                 """\
                 [mkosi]

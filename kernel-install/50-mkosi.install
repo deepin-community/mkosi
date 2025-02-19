@@ -1,48 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
-import argparse
-import dataclasses
 import logging
-import os
-import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 from mkosi import identify_cpu
 from mkosi.archive import make_cpio
-from mkosi.config import OutputFormat, __version__
-from mkosi.log import die, log_setup
+from mkosi.config import OutputFormat
+from mkosi.initrd import KernelInstallContext
+from mkosi.log import log_setup
 from mkosi.run import run, uncaught_exception_handler
-from mkosi.types import PathString
-from mkosi.util import umask
+from mkosi.sandbox import umask
+from mkosi.util import PathString
 
 
-@dataclasses.dataclass(frozen=True)
-class Context:
-    command: str
-    kernel_version: str
-    entry_dir: Path
-    kernel_image: Path
-    initrds: list[Path]
-    staging_area: Path
-    layout: str
-    image_type: str
-    initrd_generator: Optional[str]
-    uki_generator: Optional[str]
-    verbose: bool
-
-
-def we_are_wanted(context: Context) -> bool:
+def we_are_wanted(context: KernelInstallContext) -> bool:
     return context.uki_generator == "mkosi" or context.initrd_generator in ("mkosi", "mkosi-initrd")
-
-
-def mandatory_variable(name: str) -> str:
-    try:
-        return os.environ[name]
-    except KeyError:
-        die(f"${name} must be set in the environment")
 
 
 def build_microcode_initrd(output: Path) -> Optional[Path]:
@@ -73,74 +49,33 @@ def build_microcode_initrd(output: Path) -> Optional[Path]:
 
 @uncaught_exception_handler()
 def main() -> None:
-    log_setup()
-
-    parser = argparse.ArgumentParser(
-        description='kernel-install plugin to build initrds or Unified Kernel Images using mkosi',
-        allow_abbrev=False,
-        usage='50-mkosi.install COMMAND KERNEL_VERSION ENTRY_DIR KERNEL_IMAGE INITRD…',
+    context = KernelInstallContext.parse(
+        name="50-mkosi.install",
+        description="kernel-install plugin to build initrds or Unified Kernel Images using mkosi",
     )
 
-    parser.add_argument(
-        "command",
-        metavar="COMMAND",
-        help="The action to perform. Only 'add' is supported.",
-    )
-    parser.add_argument(
-        "kernel_version",
-        metavar="KERNEL_VERSION",
-        help="Kernel version string",
-    )
-    parser.add_argument(
-        "entry_dir",
-        metavar="ENTRY_DIR",
-        type=Path,
-        nargs="?",
-        help="Type#1 entry directory (ignored)",
-    )
-    parser.add_argument(
-        "kernel_image",
-        metavar="KERNEL_IMAGE",
-        type=Path,
-        nargs="?",
-        help="Kernel image",
-    )
-    parser.add_argument(
-        "initrds",
-        metavar="INITRD…",
-        type=Path,
-        nargs="*",
-        help="Initrd files",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"mkosi {__version__}",
-    )
-
-    context = Context(
-        **vars(parser.parse_args()),
-        staging_area=Path(mandatory_variable("KERNEL_INSTALL_STAGING_AREA")),
-        layout=mandatory_variable("KERNEL_INSTALL_LAYOUT"),
-        image_type=mandatory_variable("KERNEL_INSTALL_IMAGE_TYPE"),
-        initrd_generator=os.getenv("KERNEL_INSTALL_INITRD_GENERATOR"),
-        uki_generator=os.getenv("KERNEL_INSTALL_UKI_GENERATOR"),
-        verbose=int(os.getenv("KERNEL_INSTALL_VERBOSE", 0)) > 0,
-    )
+    log_setup(default_log_level="info" if context.verbose else "warning")
 
     if context.command != "add" or not we_are_wanted(context):
+        logging.info("mkosi-initrd is not enabled, skipping")
         return
 
     # If kernel-install was passed a UKI, there's no need to build anything ourselves.
     if context.image_type == "uki":
+        logging.info("Provided kernel image is already a unified kernel image, skipping mkosi-initrd")
         return
 
     # If the initrd was provided on the kernel command line, we shouldn't generate our own.
     if context.layout != "uki" and context.initrds:
+        logging.info("Pre-built initrds were provided, skipping mkosi-initrd")
         return
 
-    format = OutputFormat.uki if context.layout == "uki" and context.uki_generator == "mkosi" else OutputFormat.cpio
-    output = "initrd" if format == OutputFormat.cpio else "uki"
+    if context.layout == "uki" and context.uki_generator == "mkosi":
+        format = OutputFormat.uki
+    else:
+        format = OutputFormat.cpio
+
+    output = "initrd" if format == OutputFormat.cpio else "uki.efi"
 
     cmdline: list[PathString] = [
         "mkosi-initrd",
@@ -148,24 +83,19 @@ def main() -> None:
         "--format", str(format),
         "--output", output,
         "--output-dir", context.staging_area,
-    ]
+        "--kernel-image", context.kernel_image,
+    ]  # fmt: skip
 
     if context.verbose:
         cmdline += ["--debug"]
 
     logging.info(f"Building {output}")
 
-    run(cmdline)
-
-    (context.staging_area / output).unlink()
+    run(cmdline, stdin=sys.stdin, stdout=sys.stdout)
 
     if format == OutputFormat.cpio:
-        shutil.move(next(context.staging_area.glob("initrd*.cpio*")), context.staging_area / "initrd")
         build_microcode_initrd(context.staging_area / "microcode")
-    else:
-        (context.staging_area / f"{output}.vmlinuz").unlink()
-        (context.staging_area / f"{output}.initrd").unlink()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

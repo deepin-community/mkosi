@@ -2,18 +2,17 @@
 
 import dataclasses
 import textwrap
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
+from typing import Final, Optional
 
 from mkosi.config import PACKAGE_GLOBS, Config, ConfigFeature
 from mkosi.context import Context
 from mkosi.installer import PackageManager
 from mkosi.log import die
-from mkosi.run import run
-from mkosi.sandbox import Mount, apivfs_cmd
-from mkosi.types import _FILE, CompletedProcess, PathString
-from mkosi.util import umask
+from mkosi.run import CompletedProcess, run, workdir
+from mkosi.sandbox import umask
+from mkosi.util import _FILE, PathString
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,7 +37,7 @@ class AptRepository:
 
 
 class Apt(PackageManager):
-    documentation_exclude_globs = [
+    documentation_exclude_globs: Final[list[str]] = [
         "usr/share/doc/*",
         "usr/share/man/*",
         "usr/share/groff/*",
@@ -48,7 +47,7 @@ class Apt(PackageManager):
 
     @classmethod
     def executable(cls, config: Config) -> str:
-        return "apt"
+        return "apt-get"
 
     @classmethod
     def subdir(cls, config: Config) -> Path:
@@ -68,9 +67,12 @@ class Apt(PackageManager):
 
     @classmethod
     def scripts(cls, context: Context) -> dict[str, list[PathString]]:
+        cmd = cls.apivfs_script_cmd(context)
+
         return {
             **{
-                command: apivfs_cmd() + cls.env_cmd(context) + cls.cmd(context, command) for command in (
+                command: cmd + cls.env_cmd(context) + cls.cmd(context, command)
+                for command in (
                     "apt",
                     "apt-cache",
                     "apt-cdrom",
@@ -83,23 +85,24 @@ class Apt(PackageManager):
                 )
             },
             **{
-                command: apivfs_cmd() + cls.dpkg_cmd(command) for command in(
+                command: cmd + cls.dpkg_cmd(command)
+                for command in (
                     "dpkg",
                     "dpkg-query",
                 )
             },
-            "mkosi-install"  : ["apt-get", "install"],
-            "mkosi-upgrade"  : ["apt-get", "upgrade"],
-            "mkosi-remove"   : ["apt-get", "purge"],
+            "mkosi-install":   ["apt-get", "install"],
+            "mkosi-upgrade":   ["apt-get", "upgrade"],
+            "mkosi-remove":    ["apt-get", "purge"],
             "mkosi-reinstall": ["apt-get", "install", "--reinstall"],
-        }
+        }  # fmt: skip
 
     @classmethod
-    def setup(cls, context: Context, repos: Iterable[AptRepository]) -> None:
-        (context.pkgmngr / "etc/apt").mkdir(exist_ok=True, parents=True)
-        (context.pkgmngr / "etc/apt/apt.conf.d").mkdir(exist_ok=True, parents=True)
-        (context.pkgmngr / "etc/apt/preferences.d").mkdir(exist_ok=True, parents=True)
-        (context.pkgmngr / "etc/apt/sources.list.d").mkdir(exist_ok=True, parents=True)
+    def setup(cls, context: Context, repositories: Sequence[AptRepository]) -> None:
+        (context.sandbox_tree / "etc/apt").mkdir(exist_ok=True, parents=True)
+        (context.sandbox_tree / "etc/apt/apt.conf.d").mkdir(exist_ok=True, parents=True)
+        (context.sandbox_tree / "etc/apt/preferences.d").mkdir(exist_ok=True, parents=True)
+        (context.sandbox_tree / "etc/apt/sources.list.d").mkdir(exist_ok=True, parents=True)
 
         with umask(~0o755):
             # TODO: Drop once apt 2.5.4 is widely available.
@@ -108,11 +111,12 @@ class Apt(PackageManager):
 
             (context.root / "var/lib/dpkg/available").touch()
 
-        # We have a special apt.conf outside of pkgmngr dir that only configures "Dir::Etc" that we pass to APT_CONFIG
-        # to tell apt it should read config files from /etc/apt in case this is overridden by distributions. This is
-        # required because apt parses CLI configuration options after parsing its configuration files and as such we
-        # can't use CLI options to tell apt where to look for configuration files.
-        config = context.pkgmngr / "etc/apt.conf"
+        # We have a special apt.conf outside of the sandbox tree that only configures "Dir::Etc" that we pass
+        # to APT_CONFIG to tell apt it should read config files from /etc/apt in case this is overridden by
+        # distributions.  This is required because apt parses CLI configuration options after parsing its
+        # configuration files and as such we can't use CLI options to tell apt where to look for
+        # configuration files.
+        config = context.sandbox_tree / "etc/apt.conf"
         if not config.exists():
             config.write_text(
                 textwrap.dedent(
@@ -122,25 +126,25 @@ class Apt(PackageManager):
                 )
             )
 
-        sources = context.pkgmngr / "etc/apt/sources.list.d/mkosi.sources"
+        sources = context.sandbox_tree / "etc/apt/sources.list.d/mkosi.sources"
         if not sources.exists():
-            for repo in repos:
-                if repo.signedby and not repo.signedby.exists():
+            for repo in repositories:
+                if repo.signedby and not (context.config.tools() / str(repo.signedby).lstrip("/")).exists():
                     die(
                         f"Keyring for repo {repo.url} not found at {repo.signedby}",
-                        hint="Make sure the right keyring package (e.g. debian-archive-keyring or ubuntu-keyring) is "
-                             "installed",
+                        hint="Make sure the right keyring package (e.g. debian-archive-keyring, "
+                        "kali-archive-keyring or ubuntu-keyring) is installed",
                     )
 
             with sources.open("w") as f:
-                for repo in repos:
+                for repo in repositories:
                     f.write(str(repo))
 
     @classmethod
     def finalize_environment(cls, context: Context) -> dict[str, str]:
         env = {
             "APT_CONFIG": "/etc/apt.conf",
-            "DEBIAN_FRONTEND" : "noninteractive",
+            "DEBIAN_FRONTEND": "noninteractive",
             "DEBCONF_INTERACTIVE_SEEN": "true",
         }
 
@@ -150,7 +154,7 @@ class Apt(PackageManager):
         return super().finalize_environment(context) | env
 
     @classmethod
-    def cmd(cls, context: Context, command: str) -> list[PathString]:
+    def cmd(cls, context: Context, command: str = "apt-get") -> list[PathString]:
         debarch = context.config.distribution.architecture(context.config.architecture)
 
         cmdline: list[PathString] = [
@@ -165,6 +169,7 @@ class Apt(PackageManager):
             "-o", "APT::Get::Allow-Remove-Essential=true",
             "-o", "APT::Sandbox::User=root",
             "-o", "Acquire::AllowReleaseInfoChange=true",
+            "-o", "Acquire::Check-Valid-Until=false",
             "-o", "Dir::Cache=/var/cache/apt",
             "-o", "Dir::State=/var/lib/apt",
             "-o", "Dir::Log=/var/log/apt",
@@ -179,24 +184,27 @@ class Apt(PackageManager):
             "-o", "DPkg::Use-Pty=false",
             "-o", "DPkg::Install::Recursive::Minimum=1000",
             "-o", "pkgCacheGen::ForceEssential=,",
-        ]
+        ]  # fmt: skip
 
         if not context.config.repository_key_check:
             cmdline += [
                 "-o", "Acquire::AllowInsecureRepositories=true",
                 "-o", "Acquire::AllowDowngradeToInsecureRepositories=true",
                 "-o", "APT::Get::AllowUnauthenticated=true",
-            ]
+            ]  # fmt: skip
 
         if not context.config.with_docs:
-            cmdline += [f"--option=DPkg::Options::=--path-exclude=/{glob}" for glob in cls.documentation_exclude_globs]
+            cmdline += [
+                f"--option=DPkg::Options::=--path-exclude=/{glob}"
+                for glob in cls.documentation_exclude_globs
+            ]
             cmdline += ["--option=DPkg::Options::=--path-include=/usr/share/doc/*/copyright"]
 
         if context.config.proxy_url:
             cmdline += [
                 "-o", f"Acquire::http::Proxy={context.config.proxy_url}",
                 "-o", f"Acquire::https::Proxy={context.config.proxy_url}",
-            ]
+            ]  # fmt: skip
 
         return cmdline
 
@@ -208,21 +216,13 @@ class Apt(PackageManager):
         arguments: Sequence[str] = (),
         *,
         apivfs: bool = False,
-        mounts: Sequence[Mount] = (),
+        options: Sequence[PathString] = (),
         stdout: _FILE = None,
     ) -> CompletedProcess:
         return run(
-            cls.cmd(context, "apt-get") + [operation, *arguments],
-            sandbox=(
-                context.sandbox(
-                    binary="apt-get",
-                    network=True,
-                    vartmp=True,
-                    mounts=[Mount(context.root, "/buildroot"), *cls.mounts(context), *mounts],
-                    extra=apivfs_cmd() if apivfs else []
-                )
-            ),
-            env=context.config.environment | cls.finalize_environment(context),
+            cls.cmd(context) + [operation, *arguments],
+            sandbox=cls.sandbox(context, apivfs=apivfs, options=options),
+            env=cls.finalize_environment(context),
             stdout=stdout,
         )
 
@@ -256,14 +256,15 @@ class Apt(PackageManager):
                 *(d.name for glob in PACKAGE_GLOBS for d in context.repository.glob(glob) if "deb" in glob),
             ],
             sandbox=context.sandbox(
-                binary="reprepro",
-                mounts=[Mount(context.repository, context.repository)],
-                options=["--chdir", context.repository],
+                options=[
+                    "--bind", context.repository, workdir(context.repository),
+                    "--chdir", workdir(context.repository),
+                ],
             ),
-        )
+        )  # fmt: skip
 
-        (context.pkgmngr / "etc/apt/sources.list.d").mkdir(parents=True, exist_ok=True)
-        (context.pkgmngr / "etc/apt/sources.list.d/mkosi-local.sources").write_text(
+        (context.sandbox_tree / "etc/apt/sources.list.d").mkdir(parents=True, exist_ok=True)
+        (context.sandbox_tree / "etc/apt/sources.list.d/mkosi-local.sources").write_text(
             textwrap.dedent(
                 """\
                 Enabled: yes
@@ -284,4 +285,4 @@ class Apt(PackageManager):
                 "-o", "Dir::Etc::sourceparts=-",
                 "-o", "APT::Get::List-Cleanup=0",
             ],
-        )
+        )  # fmt: skip

@@ -3,16 +3,17 @@
 import functools
 import itertools
 import string
+from typing import Final
 
 
 @functools.total_ordering
 class GenericVersion:
-    # These constants follow the convention of the return value of rpmdev-vercmp that are followe
+    # These constants follow the convention of the return value of rpmdev-vercmp that are followed
     # by systemd-analyze compare-versions when called with only two arguments (without a comparison
     # operator), recreated in the compare_versions method.
-    _EQUAL = 0
-    _RIGHT_SMALLER = 1
-    _LEFT_SMALLER = -1
+    _EQUAL: Final[int] = 0
+    _RIGHT_SMALLER: Final[int] = 1
+    _LEFT_SMALLER: Final[int] = -1
 
     def __init__(self, version: str):
         self._version = version
@@ -20,6 +21,7 @@ class GenericVersion:
     @classmethod
     def compare_versions(cls, v1: str, v2: str) -> int:
         """Implements comparison according to UAPI Group Version Format Specification"""
+
         def rstrip_invalid_version_chars(s: str) -> str:
             valid_version_chars = {*string.ascii_letters, *string.digits, "~", "-", "^", "."}
             for i, c in enumerate(s):
@@ -83,9 +85,9 @@ class GenericVersion:
                 v2 = v2.removeprefix("^")
             elif v1.startswith("^"):
                 # TODO: bug?
-                return cls._LEFT_SMALLER  #cls._RIGHT_SMALLER
+                return cls._LEFT_SMALLER  # cls._RIGHT_SMALLER
             elif v2.startswith("^"):
-                return cls._RIGHT_SMALLER #cls._LEFT_SMALLER
+                return cls._RIGHT_SMALLER  # cls._LEFT_SMALLER
 
             # If the remaining part of one of strings starts with ".": if the other remaining part
             # does not start with ., the string with . compares lower. Otherwise, both dot

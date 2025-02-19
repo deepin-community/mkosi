@@ -5,7 +5,7 @@ and `zypper` that generates customized disk images with a number of
 bells and whistles.
 
 For a longer description and available features and options, see the
-[man page](mkosi/resources/mkosi.md).
+[man page](mkosi/resources/man/mkosi.1.md).
 
 <a href="https://repology.org/project/mkosi/versions">
     <img align="right" src="https://repology.org/badge/vertical-allrepos/mkosi.svg?exclude_sources=site&exclude_unsupported=1" alt="Packaging status">
@@ -26,12 +26,13 @@ listed below instead.
 To run mkosi straight from its git repository, you can invoke the shim
 `bin/mkosi`. The `MKOSI_INTERPRETER` environment variable can be set
 when using the `bin/mkosi` shim to configure the python interpreter used
-to execute mkosi. The shim can be symlinked to e.g. `/usr/local/bin` to
-make it accessible from the `PATH`.
+to execute mkosi. The shim can be symlinked to e.g. `~/.local/bin` to
+make it accessible from the `PATH`. Note that to make this work you
+might have to add `~/.local/bin` to your user's `PATH`.
 
 ```shell
 git clone https://github.com/systemd/mkosi
-ln -s $PWD/mkosi/bin/mkosi /usr/local/bin/mkosi
+ln -s $PWD/mkosi/bin/mkosi ~/.local/bin/mkosi
 mkosi --version
 ```
 
@@ -78,17 +79,31 @@ when not installed as a zipapp.
 Please note, that the python module exists solely for the usage of the
 mkosi binary and is not to be considered a public API.
 
-## kernel-install plugin
+## kernel-install plugins
 
-mkosi can also be used as a kernel-install plugin to build initrds. To
-enable this feature, install `kernel-install/50-mkosi.install`
+mkosi can also be used as a kernel-install plugin to build initrds and addons.
+It is recommended to use only one of these two plugins at a given time.
+
+### UKI plugin
+To enable this feature, install `kernel-install/50-mkosi.install`
 into `/usr/lib/kernel/install.d`. Extra distro configuration for the
 initrd can be configured in `/usr/lib/mkosi-initrd`. Users can add their
-own customizations in `/etc/mkosi-initrd`.
+own customizations in `/etc/mkosi-initrd`. A full self-contained UKI will
+be built and installed.
 
 Once installed, the mkosi plugin can be enabled by writing
-`initrd_generator=mkosi-initrd` to `/usr/lib/kernel/install.conf` or to
-`/etc/kernel/install.conf`.
+`initrd_generator=mkosi-initrd` and `layout=uki` to `/usr/lib/kernel/install.conf`
+or to `/etc/kernel/install.conf`.
+
+### Addon plugin
+To enable this feature, install `kernel-install/51-mkosi-addon.install` into
+`/usr/lib/kernel/install.d`. Extra distro configuration for the addon can be
+configured in `/usr/lib/mkosi-addon`. Users can add their own customizations in
+`/etc/mkosi-addon` and `/run/mkosi-addon`. Note that unless at least one of the
+last two directories are present, the plugin will not operate.
+
+This plugin is useful to enhance a vendor-provided UKI with local-only
+modifications.
 
 # Hacking on mkosi
 
@@ -111,6 +126,7 @@ tests locally as well.
 * [mkosi-initrd: Building initrds out of distribution packages](https://video.fosdem.org/2024/ua2118/fosdem-2024-2888-mkosi-initrd-building-initrds-out-of-distribution-packages.av1.webm)
 * [Running systemd integration tests with mkosi](https://video.fosdem.org/2024/ud2208/fosdem-2024-3431-running-systemd-integration-tests-with-mkosi.av1.webm)
 * [Arch Linux rescue image with mkosi](https://swsnr.de/archlinux-rescue-image-with-mkosi)
+* [Building vagrant images with mkosi](https://vdwaa.nl/mkosi-vagrant-images.html#mkosi-vagrant-images)
 
 ## Community
 

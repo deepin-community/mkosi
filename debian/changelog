@@ -1,3 +1,97 @@
+mkosi (25.3-5) unstable; urgency=medium
+
+  * autopkgtest: skip booting image if kvm is not available. It's too slow
+    without kvm and everything times out.
+  * Add dependencies to build signed (with PCRs) UKIs on OBS: pesign, jq,
+    tpm2-tools
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 13 Feb 2025 20:23:51 +0000
+
+mkosi (25.3-4) unstable; urgency=medium
+
+  * autopkgtest: use --sandbox-tree= instead of the deprecated --package-
+    manager-tree=
+  * autopkgtest: disable apparmor. Stops mkosi from being able to spawn
+    namespaces
+  * autopkgtest: add workaround for compressed arm64 kernels. On ubuntu
+    the arm64 kernel package ships a gzip file, so booting a UKI fails.
+    Add a workaround until mkosi/ukify can deal with this.
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 13 Feb 2025 02:37:38 +0000
+
+mkosi (25.3-3) unstable; urgency=medium
+
+  * Recommend ipxe-qemu and pull it in the autopkgtest suite
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 11 Feb 2025 14:21:46 +0000
+
+mkosi (25.3-2) unstable; urgency=medium
+
+  * autopkgtest: pass --repositories parameter to enable universe on Ubuntu
+  * autopkgtest: boot with --runtime-scratch=no. There's no need for
+    linking /var/tmp with the host, and it fails on Ubuntu
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 10 Feb 2025 15:51:56 +0000
+
+mkosi (25.3-1) unstable; urgency=medium
+
+  * Switch dependency to new name for Ubuntu keyring
+  * Drop obsolete alternative dependency satisfied since Buster
+  * Update upstream source from tag 'upstream/25.3' Update to upstream
+    version '25.3' with Debian dir
+    93481c8377da8acf4eb28f84209f09bcb3e050d9
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 31 Jan 2025 10:27:48 +0000
+
+mkosi (25.2-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/25.2' Update to upstream
+    version '25.2' with Debian dir
+    ba383554fee1e208c6cc316eab138c276f1b8128
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 24 Jan 2025 16:14:30 +0000
+
+mkosi (25.1-2) unstable; urgency=medium
+
+  * autopkgtest: run with isolation-machine. Cannot use kvm and vhost from
+    the container runtime
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 24 Jan 2025 10:50:57 +0000
+
+mkosi (25.1-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/25.1' Update to upstream
+    version '25.1' with Debian dir
+    e733e7aab5a2dfe9f9f625a59df76fe03a00adcc
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 24 Jan 2025 10:18:09 +0000
+
+mkosi (25-1) unstable; urgency=medium
+
+  [ Luca Boccassi ]
+  * New upstream version 25. For a full list of changes, see:
+    https://github.com/systemd/mkosi/releases/tag/v25
+  * Add mtools to recommends list
+  * Update upstream source from tag 'upstream/25' Update to upstream
+    version '25' with Debian dir c000a349c64eb91efa4ff0cad86ea10cfc9ce2ba
+  * Update dependencies for v25. Packages needed to build Debian/Ubuntu
+    images are now dependencies, packages needed to boot in nspawn/qemu
+    are recommends (Closes: #1088673)
+  * Drop argcomplete build dependency, no longer needed
+  * Use provided script to generate manpages (Closes: #1092663)
+  * Add autopkgtest building and booting an image
+  * Drop build dependency on fdisk, no longer needed for tests
+  * Install kernel-install integration
+  * Override Lintian warning repeated-path-segment
+
+  [ Laszlo Gombos ]
+  * Add qemu-system as recommended package for the qemu argument
+
+  [ Jörg Behrmann ]
+  * Install fish and zsh completions
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 23 Jan 2025 15:31:09 +0000
+
 mkosi (24.3-1) unstable; urgency=medium
 
   * New upstream version 24.3

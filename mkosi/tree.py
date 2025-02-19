@@ -11,31 +11,25 @@ from pathlib import Path
 
 from mkosi.config import ConfigFeature
 from mkosi.log import ARG_DEBUG, die
-from mkosi.run import run
-from mkosi.sandbox import Mount, SandboxProtocol, nosandbox
-from mkosi.types import PathString
+from mkosi.run import SandboxProtocol, nosandbox, run, workdir
+from mkosi.sandbox import BTRFS_SUPER_MAGIC, statfs
+from mkosi.util import PathString, flatten
 from mkosi.versioncomp import GenericVersion
 
 
-def statfs(path: Path, *, sandbox: SandboxProtocol = nosandbox) -> str:
-    return run(
-        ["stat", "--file-system", "--format", "%T", path],
-        stdout=subprocess.PIPE,
-        sandbox=sandbox(binary="stat", mounts=[Mount(path, path, ro=True)]),
-    ).stdout.strip()
-
-
-def is_subvolume(path: Path, *, sandbox: SandboxProtocol = nosandbox) -> bool:
-    return path.is_dir() and path.stat().st_ino == 256 and statfs(path, sandbox=sandbox) == "btrfs"
+def is_subvolume(path: Path) -> bool:
+    return path.is_dir() and path.stat().st_ino == 256 and statfs(str(path)) == BTRFS_SUPER_MAGIC
 
 
 def cp_version(*, sandbox: SandboxProtocol = nosandbox) -> GenericVersion:
     return GenericVersion(
         run(
             ["cp", "--version"],
-            sandbox=sandbox(binary="cp"),
+            sandbox=sandbox(),
             stdout=subprocess.PIPE,
-        ).stdout.splitlines()[0].split()[3]
+        )
+        .stdout.splitlines()[0]
+        .split()[3]
     )
 
 
@@ -45,7 +39,9 @@ def make_tree(
     use_subvolumes: ConfigFeature = ConfigFeature.disabled,
     sandbox: SandboxProtocol = nosandbox,
 ) -> Path:
-    if statfs(path.parent, sandbox=sandbox) != "btrfs":
+    path = path.absolute()
+
+    if statfs(str(path.parent)) != BTRFS_SUPER_MAGIC:
         if use_subvolumes == ConfigFeature.enabled:
             die(f"Subvolumes requested but {path} is not located on a btrfs filesystem")
 
@@ -53,9 +49,11 @@ def make_tree(
         return path
 
     if use_subvolumes != ConfigFeature.disabled:
-        result = run(["btrfs", "subvolume", "create", path],
-                     sandbox=sandbox(binary="btrfs", mounts=[Mount(path.parent, path.parent)]),
-                     check=use_subvolumes == ConfigFeature.enabled).returncode
+        result = run(
+            ["btrfs", "subvolume", "create", workdir(path, sandbox)],
+            sandbox=sandbox(options=["--bind", path.parent, workdir(path.parent, sandbox)]),
+            check=use_subvolumes == ConfigFeature.enabled,
+        ).returncode
     else:
         result = 1
 
@@ -89,39 +87,47 @@ def copy_tree(
     use_subvolumes: ConfigFeature = ConfigFeature.disabled,
     sandbox: SandboxProtocol = nosandbox,
 ) -> Path:
-    copy: list[PathString] = [
-        "cp",
-        "--recursive",
-        "--dereference" if dereference else "--no-dereference",
-        f"--preserve=mode,links{',timestamps,ownership,xattr' if preserve else ''}",
-        "--reflink=auto",
-        "--copy-contents",
-        src, dst,
-    ]
-    if cp_version(sandbox=sandbox) >= "9.5":
-        copy += ["--keep-directory-symlink"]
+    src = src.absolute()
+    dst = dst.absolute()
 
-    mounts = [Mount(src, src, ro=True), Mount(dst.parent, dst.parent)]
+    options: list[PathString] = [
+        "--ro-bind", src, workdir(src, sandbox),
+        "--bind", dst.parent, workdir(dst.parent, sandbox),
+    ]  # fmt: skip
 
-    # If the source and destination are both directories, we want to merge the source directory with the
-    # destination directory. If the source if a file and the destination is a directory, we want to copy
-    # the source inside the directory.
-    if src.is_dir():
-        copy += ["--no-target-directory"]
+    def copy() -> None:
+        cmdline: list[PathString] = [
+            "cp",
+            "--recursive",
+            "--dereference" if dereference else "--no-dereference",
+            f"--preserve=mode,links{',timestamps,ownership,xattr' if preserve else ''}",
+            "--reflink=auto",
+            "--copy-contents",
+            workdir(src, sandbox),
+            workdir(dst, sandbox),
+        ]
+
+        if dst.exists() and dst.is_dir() and any(dst.iterdir()) and cp_version(sandbox=sandbox) >= "9.5":
+            cmdline += ["--keep-directory-symlink"]
+
+        # If the source and destination are both directories, we want to merge the source directory with the
+        # destination directory. If the source if a file and the destination is a directory, we want to copy
+        # the source inside the directory.
+        if src.is_dir():
+            cmdline += ["--no-target-directory"]
+
+        run(cmdline, sandbox=sandbox(options=options))
 
     # Subvolumes always have inode 256 so we can use that to check if a directory is a subvolume.
     if (
-        use_subvolumes == ConfigFeature.disabled or
-        not preserve or
-        not is_subvolume(src, sandbox=sandbox) or
-        (dst.exists() and any(dst.iterdir()))
+        use_subvolumes == ConfigFeature.disabled
+        or not preserve
+        or not is_subvolume(src)
+        or (dst.exists() and (not dst.is_dir() or any(dst.iterdir())))
     ):
-        with (
-            preserve_target_directories_stat(src, dst)
-            if not preserve
-            else contextlib.nullcontext()
-        ):
-            run(copy, sandbox=sandbox(binary="cp", mounts=mounts))
+        with preserve_target_directories_stat(src, dst) if not preserve else contextlib.nullcontext():
+            copy()
+
         return dst
 
     # btrfs can't snapshot to an existing directory so make sure the destination does not exist.
@@ -129,18 +135,14 @@ def copy_tree(
         dst.rmdir()
 
     result = run(
-        ["btrfs", "subvolume", "snapshot", src, dst],
+        ["btrfs", "subvolume", "snapshot", workdir(src, sandbox), workdir(dst, sandbox)],
         check=use_subvolumes == ConfigFeature.enabled,
-        sandbox=sandbox(binary="btrfs", mounts=mounts),
+        sandbox=sandbox(options=options),
     ).returncode
 
     if result != 0:
-        with (
-            preserve_target_directories_stat(src, dst)
-            if not preserve
-            else contextlib.nullcontext()
-        ):
-            run(copy, sandbox=sandbox(binary="cp", mounts=mounts))
+        with preserve_target_directories_stat(src, dst) if not preserve else contextlib.nullcontext():
+            copy()
 
     return dst
 
@@ -149,19 +151,29 @@ def rmtree(*paths: Path, sandbox: SandboxProtocol = nosandbox) -> None:
     if not paths:
         return
 
-    if subvolumes := sorted({p for p in paths if p.exists() and is_subvolume(p, sandbox=sandbox)}):
-        # Silence and ignore failures since when not running as root, this will fail with a permission error unless the
-        # btrfs filesystem is mounted with user_subvol_rm_allowed.
-        run(["btrfs", "subvolume", "delete", *subvolumes],
+    paths = tuple(p.absolute() for p in paths)
+
+    if subvolumes := sorted({p for p in paths if p.exists() and is_subvolume(p)}):
+        # Silence and ignore failures since when not running as root, this will fail with a permission error
+        # unless the btrfs filesystem is mounted with user_subvol_rm_allowed.
+        run(
+            ["btrfs", "subvolume", "delete", *(workdir(p, sandbox) for p in subvolumes)],
             check=False,
-            sandbox=sandbox(binary="btrfs", mounts=[Mount(p.parent, p.parent) for p in subvolumes]),
+            sandbox=sandbox(
+                options=flatten(("--bind", p.parent, workdir(p.parent, sandbox)) for p in subvolumes),
+            ),
             stdout=subprocess.DEVNULL if not ARG_DEBUG.get() else None,
-            stderr=subprocess.DEVNULL if not ARG_DEBUG.get() else None)
+            stderr=subprocess.DEVNULL if not ARG_DEBUG.get() else None,
+        )
 
     filtered = sorted({p for p in paths if p.exists() or p.is_symlink()})
     if filtered:
-        run(["rm", "-rf", "--", *filtered],
-            sandbox=sandbox(binary="rm", mounts=[Mount(p.parent, p.parent) for p in filtered]))
+        run(
+            ["rm", "-rf", "--", *(workdir(p, sandbox) for p in filtered)],
+            sandbox=sandbox(
+                options=flatten(("--bind", p.parent, workdir(p.parent, sandbox)) for p in filtered),
+            ),
+        )
 
 
 def move_tree(
@@ -169,8 +181,11 @@ def move_tree(
     dst: Path,
     *,
     use_subvolumes: ConfigFeature = ConfigFeature.disabled,
-    sandbox: SandboxProtocol = nosandbox
+    sandbox: SandboxProtocol = nosandbox,
 ) -> Path:
+    src = src.absolute()
+    dst = dst.absolute()
+
     if src == dst:
         return dst
 
@@ -184,7 +199,8 @@ def move_tree(
             raise e
 
         logging.info(
-            f"Could not rename {src} to {dst} as they are located on different devices, falling back to copying"
+            f"Could not rename {src} to {dst} as they are located on different devices, "
+            "falling back to copying"
         )
         copy_tree(src, dst, use_subvolumes=use_subvolumes, sandbox=sandbox)
         rmtree(src, sandbox=sandbox)

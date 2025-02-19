@@ -8,7 +8,6 @@ from mkosi.context import Context
 from mkosi.distributions import centos, join_mirror
 from mkosi.installer.rpm import RpmRepository, find_rpm_gpgkey
 from mkosi.log import die
-from mkosi.util import listify
 
 
 class Installer(centos.Installer):
@@ -24,7 +23,8 @@ class Installer(centos.Installer):
             find_rpm_gpgkey(
                 context,
                 f"RPM-GPG-KEY-redhat{major}-release",
-            ) or "https://access.redhat.com/security/data/fd431d51.txt",
+                "https://access.redhat.com/security/data/fd431d51.txt",
+            ),
         )
 
     @staticmethod
@@ -33,12 +33,12 @@ class Installer(centos.Installer):
             return None
 
         p = Path("etc/rhsm/ca/redhat-uep.pem")
-        if (context.pkgmngr / p).exists():
-            p = context.pkgmngr / p
+        if (context.sandbox_tree / p).exists():
+            p = context.sandbox_tree / p
         elif (Path("/") / p).exists():
             p = Path("/") / p
         else:
-            die("redhat-uep.pem certificate not found in host system or package manager tree")
+            die("redhat-uep.pem certificate not found in host system or sandbox tree")
 
         return p
 
@@ -49,11 +49,11 @@ class Installer(centos.Installer):
 
         pattern = "etc/pki/entitlement/*-key.pem"
 
-        p = next((p for p in sorted(context.pkgmngr.glob(pattern))), None)
+        p = next((p for p in sorted(context.sandbox_tree.glob(pattern))), None)
         if not p:
             p = next((p for p in Path("/").glob(pattern)), None)
         if not p:
-            die("Entitlement key not found in host system or package manager tree")
+            die("Entitlement key not found in host system or sandbox tree")
 
         return p
 
@@ -64,11 +64,11 @@ class Installer(centos.Installer):
 
         pattern = "etc/pki/entitlement/*.pem"
 
-        p = next((p for p in sorted(context.pkgmngr.glob(pattern)) if "key" not in p.name), None)
+        p = next((p for p in sorted(context.sandbox_tree.glob(pattern)) if "key" not in p.name), None)
         if not p:
             p = next((p for p in sorted(Path("/").glob(pattern)) if "key" not in p.name), None)
         if not p:
-            die("Entitlement certificate not found in host system or package manager tree")
+            die("Entitlement certificate not found in host system or sandbox tree")
 
         return p
 
@@ -108,7 +108,6 @@ class Installer(centos.Installer):
             )
 
     @classmethod
-    @listify
     def repositories(cls, context: Context) -> Iterable[RpmRepository]:
         yield from cls.repository_variants(context, "baseos")
         yield from cls.repository_variants(context, "appstream")

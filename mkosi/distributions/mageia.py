@@ -7,7 +7,6 @@ from mkosi.context import Context
 from mkosi.distributions import fedora, join_mirror
 from mkosi.installer.rpm import RpmRepository, find_rpm_gpgkey
 from mkosi.log import die
-from mkosi.util import listify
 
 
 class Installer(fedora.Installer):
@@ -28,13 +27,13 @@ class Installer(fedora.Installer):
         cls.install_packages(context, ["filesystem"], apivfs=False)
 
     @classmethod
-    @listify
     def repositories(cls, context: Context) -> Iterable[RpmRepository]:
         gpgurls = (
             find_rpm_gpgkey(
                 context,
                 "RPM-GPG-KEY-Mageia",
-            ) or "https://mirrors.kernel.org/mageia/distrib/$releasever/$basearch/media/core/release/media_info/pubkey",
+                "https://mirrors.kernel.org/mageia/distrib/$releasever/$basearch/media/core/release/media_info/pubkey",
+            ),
         )
 
         if context.config.local_mirror:
@@ -42,7 +41,9 @@ class Installer(fedora.Installer):
             return
 
         if context.config.mirror:
-            url = f"baseurl={join_mirror(context.config.mirror, 'distrib/$releasever/$basearch/media/core/')}"
+            url = (
+                f"baseurl={join_mirror(context.config.mirror, 'distrib/$releasever/$basearch/media/core/')}"
+            )
             yield RpmRepository("core-release", f"{url}/release", gpgurls)
             yield RpmRepository("core-updates", f"{url}/updates/", gpgurls)
         else:
@@ -53,9 +54,9 @@ class Installer(fedora.Installer):
     @classmethod
     def architecture(cls, arch: Architecture) -> str:
         a = {
-            Architecture.x86_64 : "x86_64",
-            Architecture.arm64  : "aarch64",
-        }.get(arch)
+            Architecture.x86_64: "x86_64",
+            Architecture.arm64:  "aarch64",
+        }.get(arch)  # fmt: skip
 
         if not a:
             die(f"Architecture {a} is not supported by Mageia")

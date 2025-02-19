@@ -7,7 +7,7 @@ name = "mkosi"
 authors = [
     {name = "mkosi contributors", email = "systemd-devel@lists.freedesktop.org"},
 ]
-version = "24.3"
+version = "25.3"
 description = "Build Bespoke OS Images"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -20,21 +20,28 @@ bootable = [
 
 [project.scripts]
 mkosi = "mkosi.__main__:main"
-mkosi-initrd = "mkosi.initrd.__main__:main"
+mkosi-initrd = "mkosi.initrd:main"
+mkosi-sandbox = "mkosi.sandbox:main"
+mkosi-addon = "mkosi.addon:main"
 
 [tool.setuptools]
 packages = [
     "mkosi",
     "mkosi.distributions",
-    "mkosi.initrd",
-    "mkosi.initrd.resources",
     "mkosi.installer",
     "mkosi.resources",
 ]
 
 [tool.setuptools.package-data]
-"mkosi.resources" = ["repart/**/*", "mkosi.md", "mkosi.1", "mkosi-initrd/**/*", "mkosi-tools/**/*"]
-"mkosi.initrd.resources" = ["mkosi-initrd.md", "mkosi-initrd.1"]
+"mkosi.resources" = [
+    "completion.*",
+    "man/*",
+    "mkosi-addon/**/*",
+    "mkosi-initrd/**/*",
+    "mkosi-tools/**/*",
+    "mkosi-vm/**/*",
+    "repart/**/*",
+]
 
 [tool.isort]
 profile = "black"
@@ -66,12 +73,12 @@ pretty = true
 show_error_codes = true
 show_column_numbers = true
 warn_unreachable = true
-allow_redefinition = true
 strict_equality = true
+scripts_are_modules = true
 
 [tool.ruff]
 target-version = "py39"
-line-length = 119
+line-length = 109
 lint.select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]

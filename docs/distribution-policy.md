@@ -50,11 +50,11 @@ used:
   necessary methods.
 - Update any relevant methods on the `Distribution` enum to take the new
   distribution into account.
-- Update the documentation in `mkosi/resources/mkosi.md`
+- Update the documentation in `mkosi/resources/man/mkosi.1.md`
 - Update the default initrd, tools and default image configurations in
   `mkosi/resources/mkosi-initrd`, `mkosi/resources/mkosi-tools` and
   `mkosi.conf.d` respectively. If the distribution is a variant of
   another existing distribution, update the `[Match]` blocks for the
   existing distribution to also match against the new distribution. To
   test whether all necessary changes were made, you can run
-  `mkosi -d <distribution> --tools-tree -t disk -f qemu`.
+  `mkosi -d <distribution> --tools-tree -t disk -f vm`.

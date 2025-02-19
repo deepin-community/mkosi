@@ -5,10 +5,11 @@ import subprocess
 
 import pytest
 
-from mkosi.config import Bootloader, OutputFormat, QemuFirmware
+from mkosi.config import Bootloader, Firmware, OutputFormat
 from mkosi.distributions import Distribution
 from mkosi.qemu import find_virtiofsd
 from mkosi.run import find_binary, run
+from mkosi.sandbox import userns_has_single_user
 from mkosi.versioncomp import GenericVersion
 
 from . import Image, ImageConfig
@@ -17,31 +18,22 @@ pytestmark = pytest.mark.integration
 
 
 def have_vmspawn() -> bool:
-    return (
-        find_binary("systemd-vmspawn") is not None
-        and GenericVersion(run(["systemd-vmspawn", "--version"],
-                               stdout=subprocess.PIPE).stdout.strip()) >= 256
+    return find_binary("systemd-vmspawn") is not None and (
+        GenericVersion(run(["systemd-vmspawn", "--version"], stdout=subprocess.PIPE).stdout.strip()) >= 256
     )
 
 
-@pytest.mark.parametrize("format", [f for f in OutputFormat if f not in (OutputFormat.confext, OutputFormat.sysext)])
+@pytest.mark.parametrize("format", [f for f in OutputFormat if not f.is_extension_image()])
 def test_format(config: ImageConfig, format: OutputFormat) -> None:
-    with Image(
-        config,
-        options=[
-            "--kernel-command-line=systemd.unit=mkosi-check-and-shutdown.service",
-            "--incremental",
-            "--ephemeral",
-        ],
-    ) as image:
-        if image.config.distribution == Distribution.rhel_ubi and format in (OutputFormat.esp, OutputFormat.uki):
+    with Image(config) as image:
+        if image.config.distribution == Distribution.rhel_ubi and format in (
+            OutputFormat.esp,
+            OutputFormat.uki,
+        ):
             pytest.skip("Cannot build RHEL-UBI images with format 'esp' or 'uki'")
 
-        options = ["--format", str(format)]
-
-        image.summary(options)
         image.genkey()
-        image.build(options=options)
+        image.build(options=["--format", str(format)])
 
         if format in (OutputFormat.disk, OutputFormat.directory) and os.getuid() == 0:
             # systemd-resolved is enabled by default in Arch/Debian/Ubuntu (systemd default preset) but fails
@@ -49,7 +41,7 @@ def test_format(config: ImageConfig, format: OutputFormat) -> None:
             # failures.
             # FIXME: Remove when Arch/Debian/Ubuntu ship systemd v253
             args = ["systemd.mask=systemd-resolved.service"] if format == OutputFormat.directory else []
-            image.boot(options=options, args=args)
+            image.boot(args=args)
 
         if format in (OutputFormat.cpio, OutputFormat.uki, OutputFormat.esp):
             pytest.skip("Default image is too large to be able to boot in CPIO/UKI/ESP format")
@@ -57,49 +49,37 @@ def test_format(config: ImageConfig, format: OutputFormat) -> None:
         if image.config.distribution == Distribution.rhel_ubi:
             return
 
-        if format in (OutputFormat.tar, OutputFormat.oci, OutputFormat.none) or format.is_extension_image():
+        if format in (OutputFormat.tar, OutputFormat.oci, OutputFormat.none, OutputFormat.portable):
             return
 
-        if format == OutputFormat.directory and not find_virtiofsd():
+        if format == OutputFormat.directory:
+            if not find_virtiofsd():
+                pytest.skip("virtiofsd is not installed, cannot boot from directory output")
+
+            if userns_has_single_user():
+                pytest.skip("Running in user namespace with single user, cannot boot from directory")
+
             return
 
-        image.qemu(options=options)
+        image.vm()
 
         if have_vmspawn() and format in (OutputFormat.disk, OutputFormat.directory):
-            image.vmspawn(options=options)
+            image.vm(options=["--vmm=vmspawn"])
 
-        # TODO: Remove the opensuse check again when https://bugzilla.opensuse.org/show_bug.cgi?id=1227464 is resolved
-        # and we install the grub tools in the openSUSE tools tree again.
-        if format != OutputFormat.disk or config.tools_tree_distribution == Distribution.opensuse:
+        if format != OutputFormat.disk:
             return
 
-        image.qemu(options=options + ["--qemu-firmware=bios"])
+        image.vm(["--firmware=bios"])
 
 
 @pytest.mark.parametrize("bootloader", Bootloader)
 def test_bootloader(config: ImageConfig, bootloader: Bootloader) -> None:
-    if config.distribution == Distribution.rhel_ubi:
+    if config.distribution == Distribution.rhel_ubi or bootloader.is_signed():
         return
 
-    # TODO: Remove this again when https://bugzilla.opensuse.org/show_bug.cgi?id=1227464 is resolved and we install
-    # the grub tools in the openSUSE tools tree again.
-    if bootloader == Bootloader.grub and config.tools_tree_distribution == Distribution.opensuse:
-        return
+    firmware = Firmware.linux if bootloader == Bootloader.none else Firmware.auto
 
-    firmware = QemuFirmware.linux if bootloader == Bootloader.none else QemuFirmware.auto
-
-    with Image(
-        config,
-        options=[
-            "--kernel-command-line=systemd.unit=mkosi-check-and-shutdown.service",
-            "--incremental",
-            "--ephemeral",
-            "--format=disk",
-            "--bootloader", str(bootloader),
-            "--qemu-firmware", str(firmware)
-        ],
-    ) as image:
-        image.summary()
+    with Image(config) as image:
         image.genkey()
-        image.build()
-        image.qemu()
+        image.build(["--format=disk", "--bootloader", str(bootloader)])
+        image.vm(["--firmware", str(firmware)])

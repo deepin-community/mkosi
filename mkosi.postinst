@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -e
 
-if [[ "$DISTRIBUTION" =~ ubuntu|debian ]]; then
+if [[ "$DISTRIBUTION" =~ ubuntu|kali|debian ]]; then
     SUDO_GROUP=sudo
 else
     SUDO_GROUP=wheel
@@ -16,3 +16,5 @@ mkosi-chroot \
     --groups "$SUDO_GROUP",systemd-journal \
     --shell /bin/bash \
     mkosi
+
+systemctl --root="$BUILDROOT" mask lvm2-monitor.service
