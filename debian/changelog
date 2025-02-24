@@ -1,3 +1,9 @@
+mkosi (25.3-5deepin1) unstable; urgency=medium
+
+  * remove depends systemd-repart.
+
+ -- lichenggang <lichenggang@deepin.org>  Mon, 24 Feb 2025 20:00:19 +0800
+
 mkosi (25.3-5) unstable; urgency=medium
 
   * autopkgtest: skip booting image if kvm is not available. It's too slow

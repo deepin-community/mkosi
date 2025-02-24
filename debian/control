@@ -22,7 +22,6 @@ Package: mkosi
 Architecture: all
 Depends: systemd (>= 254~),
          systemd-container (>= 254~),
-         systemd-repart,
          systemd-ukify,
          python3-cryptography,
          python3-pefile,
